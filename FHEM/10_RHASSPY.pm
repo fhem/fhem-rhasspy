@@ -36,9 +36,10 @@ use GPUtils qw(:all);
 use JSON;
 use Encode;
 use HttpUtils;
-#use utf8;
+use utf8;
 use List::Util 1.45 qw(max min uniq);
 use Data::Dumper;
+use Scalar::Util qw(weaken);
 
 sub ::RHASSPY_Initialize { goto &Initialize }
 
@@ -70,6 +71,7 @@ my $languagevars = {
           1    => 'one minute'
       },
       'unitSeconds' => {
+          0    => 'seconds',
           0    => 'seconds',
           1    => 'one second'
       }
@@ -110,7 +112,7 @@ my $languagevars = {
     'duration_not_understood'   => "Sorry I could not understand the desired duration",
     'reSpeak_failed'   => 'i am sorry i can not remember',
     'Change' => {
-      'airHumidity'  => 'air humidity in $location is $value percent',
+      'humidity'     => 'air humidity in $location is $value percent',
       'battery'      => {
         '0' => 'battery level in $location is $value',
         '1' => 'battery level in $location is $value percent'
@@ -215,7 +217,7 @@ my $de_mappings = {
   },
   'ToEn' => {
     'Temperatur'       => 'temperature',
-    'Luftfeuchtigkeit' => 'airHumidity',
+    'Luftfeuchtigkeit' => 'humidity',
     'Batterie'         => 'battery',
     'Wasserstand'      => 'waterLevel',
     'Bodenfeuchte'     => 'soilMoisture',
@@ -309,6 +311,7 @@ sub Initialize {
     $hash->{DefFn}       = \&Define;
     $hash->{UndefFn}     = \&Undefine;
     $hash->{DeleteFn}    = \&Delete;
+    $hash->{RenameFn}    = \&Rename;
     $hash->{SetFn}       = \&Set;
     $hash->{AttrFn}      = \&Attr;
     $hash->{AttrList}    = "IODev rhasspyIntents:textField-long rhasspyShortcuts:textField-long rhasspyTweaks:textField-long response:textField-long forceNEXT:0,1 disable:0,1 disabledForIntervals languageFile " . $readingFnAttributes;
@@ -332,7 +335,7 @@ sub Define {
     my $defaultRoom = $h->{defaultRoom} // shift @{$anon} // q{default}; 
     $hash->{defaultRoom} = $defaultRoom;
     my $language = $h->{language} // shift @{$anon} // lc AttrVal('global','language','en');
-    $hash->{MODULE_VERSION} = '0.4.13';
+    $hash->{MODULE_VERSION} = '0.4.14';
     $hash->{baseUrl} = $Rhasspy;
     #$hash->{helper}{defaultRoom} = $defaultRoom;
     initialize_Language($hash, $language) if !defined $hash->{LANGUAGE} || $hash->{LANGUAGE} ne $language;
@@ -340,9 +343,9 @@ sub Define {
     $hash->{devspec} = $h->{devspec} // q{room=Rhasspy};
     $hash->{fhemId} = $h->{fhemId} // q{fhem};
     #$hash->{baseId} = $h->{baseId} // q{default};
-    initialize_prefix($hash, $h->{prefix}) if !defined $hash->{prefix} || $hash->{prefix} ne $h->{prefix};
+    initialize_prefix($hash, $h->{prefix}) if !defined $hash->{prefix} || defined $h->{prefix} && $hash->{prefix} ne $h->{prefix};
     $hash->{prefix} = $h->{prefix} // q{rhasspy};
-    $hash->{encoding} = $h->{encoding} // q{UTF-8};
+    $hash->{encoding} = $h->{encoding} // q{utf8};
     $hash->{useGenericAttrs} = $h->{useGenericAttrs} // 1;
     $hash->{'.asyncQueue'} = [];
     #Beta-User: Für's Ändern von defaultRoom oder prefix vielleicht (!?!) hilfreich: https://forum.fhem.de/index.php/topic,119150.msg1135838.html#msg1135838 (Rudi zu resolveAttrRename) 
@@ -489,6 +492,14 @@ sub Delete {
 =end comment
 =cut
     return;
+}
+
+sub Rename {
+    my $new_name = shift // return;
+    my $old_name = shift // return;
+
+    my $hash = $defs{$new_name} // return;
+    return renameAllRegisteredInternalTimer($hash, $new_name, $old_name);
 }
 
 # Set Befehl aufgerufen
@@ -663,9 +674,9 @@ sub init_shortcuts {
         if ( defined $named->{c} ) {
             $hash->{helper}{shortcuts}{$intent}{conf_req} = !looks_like_number($named->{c}) ? $named->{c} : 'default';
             if (defined $named->{ct}) {
-                $hash->{helper}{shortcuts}{$intent}{conf_timeout} = looks_like_number($named->{ct}) ? $named->{ct} : 15;
+                $hash->{helper}{shortcuts}{$intent}{conf_timeout} = looks_like_number($named->{ct}) ? $named->{ct} : _getDialogueTimeout($hash, 'confirm');
             } else {
-                $hash->{helper}{shortcuts}{$intent}{conf_timeout} = looks_like_number($named->{c}) ? $named->{c} : 15;
+                $hash->{helper}{shortcuts}{$intent}{conf_timeout} = looks_like_number($named->{c}) ? $named->{c} : _getDialogueTimeout($hash, 'confirm');
             }
         }
     }
@@ -690,17 +701,7 @@ sub initialize_rhasspyTweaks {
             next;
         }
 
-        if ($line =~ m{\A[\s]*timerSounds[\s]*=}x) {
-            ($tweak, $values) = split m{=}x, $line, 2;
-            $tweak = trim($tweak);
-            return "Error in $line! No content provided!" if !length $values && $init_done;
-            my($unnamedParams, $namedParams) = parseParams($values);
-            return "Error in $line! Provide at least one key-value pair!" if ( @{$unnamedParams} || !keys %{$namedParams} ) && $init_done;
-            $hash->{helper}{tweaks}{$tweak} = $namedParams;
-            next;
-        }
-
-        if ($line =~ m{\A[\s]*useGenericAttrs[\s]*=}x) {
+        if ($line =~ m{\A[\s]*(timeouts|useGenericAttrs|timerSounds)[\s]*=}x) {
             ($tweak, $values) = split m{=}x, $line, 2;
             $tweak = trim($tweak);
             return "Error in $line! No content provided!" if !length $values && $init_done;
@@ -873,6 +874,22 @@ sub _analyze_rhassypAttr {
         }
     }
 
+    #Hash mit {FHEM-Device-Name}{$intent}{$type}?
+    my $mappingsString = AttrVal($device, "${prefix}Mapping", q{});
+    for (split m{\n}x, $mappingsString) {
+        my ($key, $val) = split m{:}x, $_, 2;
+        #$key = lc($key);
+        #$val = lc($val);
+        my %currentMapping = splitMappingString($val);
+        next if !%currentMapping;
+        # Übersetzen, falls möglich:
+        $currentMapping{type} = 
+            defined $currentMapping{type} ?
+            $de_mappings->{ToEn}->{$currentMapping{type}} // $currentMapping{type} // $key
+            : $key;
+        $hash->{helper}{devicemap}{devices}{$device}{intents}{$key}->{$currentMapping{type}} = \%currentMapping;
+    }
+
     #Specials
     my @lines = split m{\n}x, AttrVal($device, "${prefix}Specials", q{});
     for my $line (@lines) {
@@ -894,11 +911,11 @@ sub _analyze_rhassypAttr {
         }
         if ($key eq 'colorCommandMap') {
             my($unnamed, $named) = parseParams($val);
-            $hash->{helper}{devicemap}{devices}{$device}{color_specials}{CommandMap} = $named if defined$named;
+            $hash->{helper}{devicemap}{devices}{$device}{color_specials}{CommandMap} = $named if defined $named;
         }
         if ($key eq 'colorTempMap') {
             my($unnamed, $named) = parseParams($val);
-            $hash->{helper}{devicemap}{devices}{$device}{color_specials}{Colortemp} = $named if defined$named;
+            $hash->{helper}{devicemap}{devices}{$device}{color_specials}{Colortemp} = $named if defined $named;
         }
         if ($key eq 'venetianBlind') {
             my($unnamed, $named) = parseParams($val);
@@ -911,22 +928,21 @@ sub _analyze_rhassypAttr {
 
             $hash->{helper}{devicemap}{devices}{$device}{venetian_specials} = $specials if defined $vencmd || defined $vendev;
         }
-    }
-
-    #Hash mit {FHEM-Device-Name}{$intent}{$type}?
-    my $mappingsString = AttrVal($device, "${prefix}Mapping", q{});
-    for (split m{\n}x, $mappingsString) {
-        my ($key, $val) = split m{:}x, $_, 2;
-        #$key = lc($key);
-        #$val = lc($val);
-        my %currentMapping = splitMappingString($val);
-    next if !%currentMapping;
-        # Übersetzen, falls möglich:
-        $currentMapping{type} = 
-            defined $currentMapping{type} ?
-            $de_mappings->{ToEn}->{$currentMapping{type}} // $currentMapping{type} // $key
-            : $key;
-        $hash->{helper}{devicemap}{devices}{$device}{intents}{$key}->{$currentMapping{type}} = \%currentMapping;
+        if ($key eq 'priority') {
+            my($unnamed, $named) = parseParams($val);
+            $hash->{helper}{devicemap}{devices}{$device}{prio}{inRoom} = $named->{inRoom} if defined $named->{inRoom};
+            $hash->{helper}{devicemap}{devices}{$device}{prio}{outsideRoom} = $named->{outsideRoom} if defined $named->{outsideRoom};
+        }
+        if ( $key eq 'scenes' && defined $hash->{helper}{devicemap}{devices}{$device}{intents}{SetScene} ) {
+            my($unnamed, $named) = parseParams($val);
+            my $combined = _combineHashes( $hash->{helper}{devicemap}{devices}{$device}{intents}{SetScene}->{SetScene}, $named);
+            for (keys %{$combined}) {
+                delete $combined->{$_} if $combined->{$_} eq 'none';
+            }
+            keys %{$combined} ?
+                $hash->{helper}{devicemap}{devices}{$device}{intents}{SetScene}->{SetScene} = $combined
+                : delete $hash->{helper}{devicemap}{devices}{$device}{intents}->{SetScene};
+        }
     }
 
     my @groups;
@@ -1012,7 +1028,7 @@ sub _analyze_genDevType {
             $currentMapping->{SetNumeric} = {
                 brightness => { cmd => 'brightness', currentVal => 'brightness', maxVal => '255', minVal => '0', step => '10', map => 'percent', type => 'brightness'}};
         }
-        $currentMapping = _analyze_genDevType_setter( $allset, $currentMapping );
+        $currentMapping = _analyze_genDevType_setter( $allset, $currentMapping, $device );
         $hash->{helper}{devicemap}{devices}{$device}{intents} = $currentMapping;
     }
     elsif ( $gdt eq 'thermostat' ) {
@@ -1067,7 +1083,7 @@ sub _analyze_genDevType {
             GetNumeric => { 'volume' => {currentVal => 'volume', type => 'volume' } }
             };
 
-        $currentMapping = _analyze_genDevType_setter( $allset, $currentMapping );
+        $currentMapping = _analyze_genDevType_setter( $hash, $device, $allset, $currentMapping );
         $hash->{helper}{devicemap}{devices}{$device}{intents} = $currentMapping;
     }
 
@@ -1075,7 +1091,9 @@ sub _analyze_genDevType {
 }
 
 sub _analyze_genDevType_setter {
-    my $setter = shift;
+    my $hash    = shift;
+    my $device  = shift;
+    my $setter  = shift;
     my $mapping = shift // {};
 
     my $allValMappings = {
@@ -1120,8 +1138,15 @@ sub _analyze_genDevType_setter {
             }
         }
     }
+
+    if ($setter =~ m{\bscene:(?<scnames>[\S]+)}xm) {
+        for my $scname (split m{,}xms, $+{scnames}) {
+            $mapping->{SetScene}->{SetScene}->{$scname} = $scname;
+        }
+    }
     return $mapping;
 }
+
 
 sub perlExecute {
     my $hash   = shift // return;
@@ -1147,7 +1172,7 @@ sub perlExecute {
 sub RHASSPY_DialogTimeout {
     my $fnHash = shift // return;
     my $hash = $fnHash->{HASH} // $fnHash;
-    return if (!defined($hash));
+    return if !defined $hash;
 
     my $identiy = $fnHash->{MODIFIER};
 
@@ -1208,65 +1233,6 @@ sub setDialogTimeout {
 
     return $toTrigger;
 }
-
-
-=pod
-sub RHASSPY_ChoiceTimeout{
-    my $hash     = shift // return;
-    my $data     = shift // return;
-    my $timeout  = shift;
-    my $response = shift;
-
-    my $siteId = $data->{siteId};
-
-    #timeout Case
-    if (!defined $mode) {
-        RemoveInternalTimer( $hash, \&RHASSPY_DialogTimeout );
-        $response = $hash->{helper}{lng}->{responses}->{DefaultConfirmationTimeout};
-        #Beta-User: we may need to start a new session first?
-        respond ($hash, $data->{requestType}, $data->{sessionId}, $siteId, $response);
-        #delete $hash->{helper}{'.delayed'};
-        configure_DialogManager($hash, $siteId, 'ConfirmAction', 'false');
-        return;
-    }
-
-    #cancellation Case
-    if ( $mode == 1 ) {
-        RemoveInternalTimer( $hash, \&RHASSPY_DialogTimeout );
-        $response = $hash->{helper}{lng}->{responses}->{ defined $hash->{helper}{'.delayed'} ? 'DefaultCancelConfirmation' : 'SilentCancelConfirmation' };
-        respond ($hash, $data->{requestType}, $data->{sessionId}, $data->{siteId}, $response);
-        #delete $hash->{helper}{'.delayed'};
-        configure_DialogManager($hash, $siteId, 'ConfirmAction', 'false');
-        return $hash->{NAME};
-    }
-    if ( $mode == 2 ) {
-        RemoveInternalTimer( $hash, \&RHASSPY_DialogTimeout );
-        #$hash->{helper}{'.delayed'} = $data;
-        $response = $hash->{helper}{lng}->{responses}->{DefaultConfirmationReceived} if $response eq 'default';
-
-        InternalTimer(time + $timeout, \&RHASSPY_DialogTimeout, $hash, 0);
-
-        #interactive dialogue as described in https://rhasspy.readthedocs.io/en/latest/reference/#dialoguemanager_continuesession and https://docs.snips.ai/articles/platform/dialog/multi-turn-dialog
-        my $ca_string = qq{$hash->{LANGUAGE}.$hash->{fhemId}:ConfirmAction};
-        my $reaction = ref $response eq 'HASH' 
-            ? $response
-            : { text         => $response, 
-                intentFilter => ["$ca_string"],
-                customData => $data
-              };
-
-        respond ($hash, $data->{requestType}, $data->{sessionId}, $data->{siteId}, $reaction);
-        configure_DialogManager($hash, $siteId, 'ConfirmAction', 'true');
-
-        my $toTrigger = $hash->{'.toTrigger'} // $hash->{NAME};
-        delete $hash->{'.toTrigger'};
-
-        return $toTrigger;
-    }
-    
-    return $hash->{NAME};
-}
-=cut
 
 #from https://stackoverflow.com/a/43873983, modified...
 sub get_unique {
@@ -1433,6 +1399,45 @@ sub getAllRhasspyGroups {
     return get_unique(\@groups, 1);
 }
 
+sub getAllRhasspyScenes {
+    my $hash = shift // return;
+    
+    my @devices = devspec2array($hash->{devspec});
+    
+    my (@sentences, @names);
+    for my $device (@devices) {
+        next if !defined $hash->{helper}{devicemap}{devices}{$device}{intents}->{SetScene};
+        push @names, split m{,}x, $hash->{helper}{devicemap}{devices}{$device}->{names}; 
+        my $scenes = $hash->{helper}{devicemap}{devices}{$device}{intents}{SetScene}->{SetScene};
+        for (keys %{$scenes}) {
+            push @sentences, qq{( $scenes->{$_} ){Scene:$_}};
+        }
+    }
+
+    @sentences = get_unique(\@sentences);
+    @names = get_unique(\@names);
+    return (\@sentences, \@names);
+}
+
+
+sub getAllRhasspyNamesAndGroupsByIntent {
+    my $hash = shift // return;
+    my $intent = shift // return;
+
+    my @names;
+    my @groups;
+    for my $device (devspec2array($hash->{devspec})) {
+        next if !defined $hash->{helper}{devicemap}{devices}{$device}{intents}->{$intent};
+        push @names, split m{,}x, $hash->{helper}{devicemap}{devices}{$device}->{names}; 
+        push @groups, split m{,}x, $hash->{helper}{devicemap}{devices}{$device}->{groups}; 
+    }
+
+    @names  = uniq(@names);
+    @groups = uniq(@groups);
+    return (\@names, \@groups);
+}
+
+
 # Derive room info from spoken text, siteId or additional logics around siteId
 sub getRoomName {
     my $hash = shift // return;
@@ -1537,6 +1542,7 @@ sub getDeviceByIntentAndType {
     Log3($hash->{NAME}, 5, "matches in room: @{$matchesInRoom}, matches outside: @{$matchesOutsideRoom}");
     my ($response, $last_item, $first_items);
 
+    my @priority;
     # Erstes Device im passenden Raum zurückliefern falls vorhanden, sonst erstes Device außerhalb
     if ( @{$matchesInRoom} ) {
         if ( @{$matchesInRoom} == 1) {
@@ -1545,15 +1551,22 @@ sub getDeviceByIntentAndType {
             my @aliases;
             for my $dev (@{$matchesInRoom}) {
                 push @aliases, $hash->{helper}{devicemap}{devices}{$dev}->{alias};
+                if (defined $hash->{helper}{devicemap}{devices}{$dev}->{prio} && defined $hash->{helper}{devicemap}{devices}{$dev}{prio}->{inRoom}) {
+                    push @priority, $dev if $hash->{helper}{devicemap}{devices}{$dev}{prio}->{inRoom} =~ m{\b$type\b}xms;
+                }
             }
-            push @{$device}, join q{,}, @aliases;
-            $last_item = pop @aliases;
-            $first_items = join q{ }, @aliases;
-            $response = getResponse ($hash, 'RequestChoiceDevice');
-            $response =~ s{(\$\w+)}{$1}eegx;
-            unshift @{$device}, $response;
-            unshift @{$device}, $matchesInRoom->[0];
-            push @{$device}, 'RequestChoiceDevice';
+            if (@priority) { 
+                $device = shift @priority;
+            } else {
+                push @{$device}, join q{,}, @aliases;
+                $last_item = pop @aliases;
+                $first_items = join q{ }, @aliases;
+                $response = getResponse ($hash, 'RequestChoiceDevice');
+                $response =~ s{(\$\w+)}{$1}eegx;
+                unshift @{$device}, $response;
+                unshift @{$device}, $matchesInRoom->[0];
+                push @{$device}, 'RequestChoiceDevice';
+            }
         }
     } elsif ( @{$matchesOutsideRoom} ) { 
         if ( @{$matchesOutsideRoom} == 1 ) {
@@ -1562,30 +1575,44 @@ sub getDeviceByIntentAndType {
             my @rooms;
             for my $dev (@{$matchesOutsideRoom}) {
                 push @rooms, (split m{,}x, $hash->{helper}{devicemap}{devices}{$dev}->{rooms})[0];
+                if (defined $hash->{helper}{devicemap}{devices}{$dev}->{prio} && defined $hash->{helper}{devicemap}{devices}{$dev}{prio}->{outsideRoom}) {
+                    push @priority, $dev if $hash->{helper}{devicemap}{devices}{$dev}{prio}->{outsideRoom} =~ m{\b$type\b}xms;
+                }
             }
             @rooms = get_unique(\@rooms);
             if ( @rooms == 1 ) {
                 my @aliases;
                 for my $dev (@{$matchesOutsideRoom}) {
                     push @aliases, $hash->{helper}{devicemap}{devices}{$dev}->{alias};
+                    if (defined $hash->{helper}{devicemap}{devices}{$dev}->{prio} && defined $hash->{helper}{devicemap}{devices}{$dev}{prio}->{inRoom}) {
+                        unshift @priority, $dev if $hash->{helper}{devicemap}{devices}{$dev}{prio}->{inRoom} =~ m{\b$type\b}xms;
+                    }
                 }
-                push @{$device}, join q{,}, @aliases;
-                $last_item = pop @aliases;
-                $first_items = join q{ }, @aliases;
-                $response = getResponse ($hash, 'RequestChoiceDevice');
-                $response =~ s{(\$\w+)}{$1}eegx;
-                unshift @{$device}, $response;
-                unshift @{$device}, $matchesOutsideRoom->[0];
-                push @{$device}, 'RequestChoiceDevice';
+                if (@priority) { 
+                    $device = shift @priority;
+                } else {
+                    push @{$device}, join q{,}, @aliases;
+                    $last_item = pop @aliases;
+                    $first_items = join q{ }, @aliases;
+                    $response = getResponse ($hash, 'RequestChoiceDevice');
+                    $response =~ s{(\$\w+)}{$1}eegx;
+                    unshift @{$device}, $response;
+                    unshift @{$device}, $matchesOutsideRoom->[0];
+                    push @{$device}, 'RequestChoiceDevice';
+                }
             } else {
-                push @{$device}, join q{,}, @rooms;
-                $last_item = pop @rooms;
-                my $first_items = join q{ }, @rooms;
-                my $response = getResponse ($hash, 'RequestChoiceRoom');
-                $response =~ s{(\$\w+)}{$1}eegx;
-                unshift @{$device}, $response;
-                unshift @{$device}, $matchesOutsideRoom->[0];
-                push @{$device}, 'RequestChoiceRoom';
+                if (@priority) { 
+                    $device = shift @priority;
+                } else {
+                    push @{$device}, join q{,}, @rooms;
+                    $last_item = pop @rooms;
+                    my $first_items = join q{ }, @rooms;
+                    my $response = getResponse ($hash, 'RequestChoiceRoom');
+                    $response =~ s{(\$\w+)}{$1}eegx;
+                    unshift @{$device}, $response;
+                    unshift @{$device}, $matchesOutsideRoom->[0];
+                    push @{$device}, 'RequestChoiceRoom';
+                }
             }
         }
     }
@@ -1723,7 +1750,7 @@ sub splitMappingString {
 
         $lastChar = $char;
     }
-    push @tokens, $token if length $token;
+    push @tokens, $token if length $token > 2 && $token =~ m{=}xms;
 
     # Tokens in Keys/Values trennen
     %parsedMapping = map {split m{=}x, $_, 2} @tokens; #Beta-User: Odd number of elements in hash assignment
@@ -1750,7 +1777,7 @@ sub getMapping {
     my $matchedMapping;
 
     if ($fromHash) {
-        $matchedMapping = $hash->{helper}{devicemap}{devices}{$device}{intents}{$intent}{$subType};
+        $matchedMapping = $hash->{helper}{devicemap}{devices}{$device}{intents}{$intent}{$subType} if defined $hash->{helper}{devicemap}{devices}{$device}{intents}{$intent}{$subType};
         return $matchedMapping if $matchedMapping;
         
         for (sort keys %{$hash->{helper}{devicemap}{devices}{$device}{intents}{$intent}}) {
@@ -2048,6 +2075,7 @@ my $dispatchFns = {
     MediaChannels   => \&handleIntentMediaChannels,
     SetColor        => \&handleIntentSetColor,
     SetColorGroup   => \&handleIntentSetColorGroup,
+    SetScene        => \&handleIntentSetScene,
     GetTime         => \&handleIntentGetTime,
     GetWeekday      => \&handleIntentGetWeekday,
     SetTimer        => \&handleIntentSetTimer,
@@ -2263,6 +2291,8 @@ sub updateSlots {
     my @colors    = getAllRhasspyColors($hash);
     my @types     = getAllRhasspyTypes($hash);
     my @groups    = getAllRhasspyGroups($hash);
+    my ($scenes,
+        $scdevs)  = getAllRhasspyScenes($hash);
     my @shortcuts = keys %{$hash->{helper}{shortcuts}};
 
     if ($noEmpty) { 
@@ -2273,30 +2303,30 @@ sub updateSlots {
         @types     = ('') if !@types;
         @groups    = ('') if !@groups;
         @shortcuts = ('') if !@shortcuts;
+        #$scenes    = []   if !@{$scenes};
+        #$scdevs    = []   if !@{$scdevs};
     }
 
-
     my $deviceData;
+    my $url = q{/api/sentences};
 
     if (@shortcuts) {
-        my $url = q{/api/sentences};
         $deviceData =qq({"intents/${language}.${fhemId}.Shortcuts.ini":"[${language}.${fhemId}:Shortcuts]\\n);
-        for (@shortcuts)
-        {
+        for (@shortcuts) {
             $deviceData = $deviceData . ($_) . '\n';
         }
         $deviceData = $deviceData . '"}';
         Log3($hash->{NAME}, 5, "Updating Rhasspy Sentences with data: $deviceData");
         _sendToApi($hash, $url, $method, $deviceData);
     }
-
+    
     # If there are any devices, rooms, etc. found, create JSON structure and send it the the API
     return if !@devices && !@rooms && !@channels && !@types && !@groups;
 
     my $json;
     $deviceData = {};
     my $overwrite = defined $tweaks && defined $tweaks->{overwrite_all} ? $tweaks->{useGenericAttrs}->{overwrite_all} : 'true';
-    my $url = qq{/api/slots?overwrite_all=$overwrite};
+    $url = qq{/api/slots?overwrite_all=$overwrite};
 
     my @gdts = (qw(switch light media blind thermostat thermometer));
     my @aliases = ();
@@ -2330,6 +2360,14 @@ sub updateSlots {
         $deviceData->{qq(${language}.${fhemId}.Aliases)} = \@aliases if @aliases;
     }
 
+    for (qw(SetNumeric SetOnOff GetNumeric GetOnOff MediaControls GetState)) {
+        my ($alias, $grps) = getAllRhasspyNamesAndGroupsByIntent($hash, $_);
+        $deviceData->{qq(${language}.${fhemId}.Device-$_)} = $alias if @{$alias} || $noEmpty;
+        $deviceData->{qq(${language}.${fhemId}.Group-$_)}  = $grps  if (@{$grps}  || $noEmpty) 
+                                                                        && ( $_ eq 'SetOnOff' || $_ eq 'SetNumeric' );
+    }
+
+
     my @allKeywords = uniq(@groups, @rooms, @devices);
 
     $deviceData->{qq(${language}.${fhemId}.Device)}        = \@devices if @devices;
@@ -2338,8 +2376,10 @@ sub updateSlots {
     $deviceData->{qq(${language}.${fhemId}.Color)}         = \@colors if @colors;
     $deviceData->{qq(${language}.${fhemId}.NumericType)}   = \@types if @types;
     $deviceData->{qq(${language}.${fhemId}.Group)}         = \@groups if @groups;
+    $deviceData->{qq(${language}.${fhemId}.Scenes)}        = $scenes if @{$scenes};
+    $deviceData->{qq(${language}.${fhemId}.Device-scene)}  = $scdevs if @{$scdevs};
     $deviceData->{qq(${language}.${fhemId}.AllKeywords)}   = \@allKeywords if @allKeywords;
-
+    
     $json = eval { toJSON($deviceData) };
 
     Log3($hash->{NAME}, 5, "Updating Rhasspy Slots with data ($language): $json");
@@ -2530,18 +2570,18 @@ sub handleCustomIntent {
     my $cmd = qq{ $subName( $args ) };
     Log3($hash->{NAME}, 5, "Calling sub: $cmd" );
     my $error = AnalyzePerlCommand($hash, $cmd);
+    my $timeout = _getDialogueTimeout($hash);
+
     if ( ref $error eq 'ARRAY' ) {
         $response = ${$error}[0] // getResponse($hash, 'DefaultConfirmation');
         if ( ref ${$error}[0] eq 'HASH') {
-            my $timeout = ${$error}[1];
-            $timeout = defined $timeout && looks_like_number($timeout) ? $timeout : 20;
-            $hash->{'.toTrigger'} = ${$error}[1] if defined ${$error}[1];
+            $timeout = ${$error}[1] if looks_like_number( ${$error}[1] );
             return setDialogTimeout($hash, $data, $timeout, ${$error}[0]);
         }
         respond ($hash, $data->{requestType}, $data->{sessionId}, $data->{siteId}, $response);
         return ${$error}[1]; #comma separated list of devices to trigger
     } elsif ( ref $error eq 'HASH' ) {
-        return setDialogTimeout($hash, $data, 20, $error);
+        return setDialogTimeout($hash, $data, $timeout, $error);
     } else {
         $response = $error; # if $error && $error !~ m{Please.define.*first}x;
     }
@@ -3023,7 +3063,7 @@ sub handleIntentGetNumeric {
         my $toActivate = $choice eq 'RequestChoiceDevice' ? [qw(ChoiceDevice CancelAction)] : [qw(ChoiceRoom CancelAction)];
         $device = $first;
         Log3($hash->{NAME}, 5, "More than one device possible, response is $response, first is $first, all are $all, type is $choice");
-        return setDialogTimeout($hash, $data, 20, $response, $toActivate);
+        return setDialogTimeout($hash, $data, _getDialogueTimeout($hash), $response, $toActivate);
     }
 
     my $mapping = getMapping($hash, $device, 'GetNumeric', { type => $type, subType => $subType }, defined $hash->{helper}{devicemap}, 0)
@@ -3051,7 +3091,7 @@ sub handleIntentGetNumeric {
     my $location = $data->{Device};
     if ( !defined $location ) {
         my $rooms = $hash->{helper}{devicemap}{devices}{$device}->{rooms};
-        $location = $data->{Room} if defined $rooms && $rooms =~ m{\b$data->{Room}\b}ix;
+        $location = $data->{Room} if defined $data->{Room} && defined $rooms && $rooms =~ m{\b$data->{Room}\b}ix;
 
         #Beta-User: this might be the place to implement the "no device in room" branch
         ($location, my $nn) = split m{,}x, $rooms if !defined $location;
@@ -3153,7 +3193,7 @@ sub handleIntentMediaControls {
                     stop => 'cmdStop', vor => 'cmdFwd', next => 'cmdFwd',
                     'zurück' => 'cmdBack', previous => 'cmdBack'
                 };
-                $cmd = $mapping->{ $Media->{$command} };
+                $cmd = $mapping->{ $Media->{$command} } if defined $mapping->{ $Media->{$command} };
                 Log3($hash->{NAME}, 4, "MediaControls with outdated mapping $command called. Please change to avoid future problems...");
             }
 
@@ -3173,6 +3213,41 @@ sub handleIntentMediaControls {
     return $device;
 }
 
+# Handle incoming "SetScene" intents
+sub handleIntentSetScene{
+    my $hash = shift // return;
+    my $data = shift // return;
+    my ($scene, $device, $room, $siteId, $mapping, $response);
+
+    Log3($hash->{NAME}, 5, "handleIntentSetScene called");
+    return respond ($hash, $data->{requestType}, $data->{sessionId}, $data->{siteId}, getResponse($hash, 'NoValidData')) if !defined $data->{Scene};
+
+    # Device AND Scene are optimum exist
+    if ( !exists $data->{Device} ) {
+        return respond ($hash, $data->{requestType}, $data->{sessionId}, $data->{siteId}, getResponse($hash, 'NoDeviceFound'));
+    } else {
+        $room = getRoomName($hash, $data);
+        $scene = $data->{Scene};
+        $device = getDeviceByName($hash, $room, $data->{Device});
+        $mapping = getMapping($hash, $device, 'SetScene', undef, defined $hash->{helper}{devicemap});
+
+        # Mapping found?
+        return respond ($hash, $data->{requestType}, $data->{sessionId}, $data->{siteId}, getResponse($hash, 'NoValidData')) if !$device || !defined $mapping;
+        my $cmd = qq(scene $scene);
+
+        # execute Cmd
+        analyzeAndRunCmd($hash, $device, $cmd);
+        Log3($hash->{NAME}, 5, "Running command [$cmd] on device [$device]" );
+
+        # Define response
+        $response = $mapping->{response} // getResponse($hash, 'DefaultConfirmation');
+    }
+
+    # Send response
+    $response = $response  // getResponse($hash, 'DefaultError');
+    respond ($hash, $data->{requestType}, $data->{sessionId}, $data->{siteId}, $response);
+    return $device;
+}
 
 # Handle incoming "GetTime" intents
 sub handleIntentGetTime {
@@ -3893,21 +3968,32 @@ sub _readLanguageFromFile {
     return 0, join q{ }, @cleaned;
 }
 
-# borrowed from WeekdayTimer
+sub _getDialogueTimeout {
+    my $hash = shift // return;
+    my $type = shift // q{default};
+
+    my $timeout = $type eq 'confirm' ? 15 : 20;
+    $timeout = $hash->{helper}{tweaks}{timeouts}->{$type} 
+        if defined $hash->{helper}->{tweaks} 
+        && defined $hash->{helper}{tweaks}->{timeouts} 
+        && defined $hash->{helper}{tweaks}{timeouts}->{$type} 
+        && looks_like_number( $hash->{helper}{tweaks}{timeouts}->{$type} );
+    return $timeout;
+}
+
+
+# borrowed from Twilight
+################################################################################
 ################################################################################
 sub resetRegisteredInternalTimer {
-    my ( $modifier, $tim, $callback, $hash, $initFlag ) = @_;
+    my ( $modifier, $tim, $callback, $hash, $waitIfInitNotDone ) = @_;
     deleteSingleRegisteredInternalTimer( $modifier, $hash, $callback );
-    return setRegisteredInternalTimer ( $modifier, $tim, $callback, $hash, $initFlag );
+    return setRegisteredInternalTimer ( $modifier, $tim, $callback, $hash, $waitIfInitNotDone );
 }
 
 ################################################################################
 sub setRegisteredInternalTimer {
-    my $modifier = shift // return;
-    my $tim      = shift // return;
-    my $callback = shift // return;
-    my $hash     = shift // return;
-    my $initFlag = shift // 0;
+    my ( $modifier, $tim, $callback, $hash, $waitIfInitNotDone ) = @_;
 
     my $timerName = "$hash->{NAME}_$modifier";
     my $fnHash     = {
@@ -3915,6 +4001,8 @@ sub setRegisteredInternalTimer {
         NAME     => $timerName,
         MODIFIER => $modifier
     };
+    weaken($fnHash->{HASH});
+
     if ( defined( $hash->{TIMER}{$timerName} ) ) {
         Log3( $hash, 1, "[$hash->{NAME}] possible overwriting of timer $timerName - please delete it first" );
         stacktrace();
@@ -3924,15 +4012,14 @@ sub setRegisteredInternalTimer {
     }
 
     Log3( $hash, 5, "[$hash->{NAME}] setting  Timer: $timerName " . FmtDateTime($tim) );
-    InternalTimer( $tim, $callback, $fnHash, $initFlag );
+    InternalTimer( $tim, $callback, $fnHash, $waitIfInitNotDone );
     return $fnHash;
 }
 
 ################################################################################
 sub deleteSingleRegisteredInternalTimer {
     my $modifier = shift;
-    my $hash     = shift // return;
-    my $callback = shift;
+    my $hash = shift // return;
 
     my $timerName = "$hash->{NAME}_$modifier";
     my $fnHash    = $hash->{TIMER}{$timerName};
@@ -3947,12 +4034,13 @@ sub deleteSingleRegisteredInternalTimer {
 ################################################################################
 sub deleteAllRegisteredInternalTimer {
     my $hash = shift // return;
-        
+
     for my $key ( keys %{ $hash->{TIMER} } ) {
         deleteSingleRegisteredInternalTimer( $hash->{TIMER}{$key}{MODIFIER}, $hash );
     }
     return;
 }
+
 
 
 1;
@@ -4253,6 +4341,12 @@ i="i am hungry" f="set Stove on" d="Stove" c="would you like roast pork"</code><
         <p><code>overwrite_all=false</code></p>
         <p>By default, RHASSPY will overwrite all generated slots. Setting this to <i>false</i> will change this.</p>
       </li>
+      <li><b>timeouts</b>
+        <p>Atm. keywords <i>confirm</i> and/or <i>default</i> can be used to change the corresponding defaults (15 seconds / 20 seconds) used for dialogue timeouts.</p>
+        <p>Example:</p>
+        <p><code>timeouts: confirm=25 default=30</code></p>
+      </li>
+
     </ul>
   </li>
 
@@ -4322,7 +4416,7 @@ orf drei=channel 203<br>
 green=rgb 008000<br>
 blue=rgb 0000FF<br>
 yellow=rgb FFFF00</code></p>
-    <p>Note: This attribute is not added to global attribute list by default. Add it using userattr or by editing the global userattr attribute.</p>
+    <p>Note: This attribute is not added to global attribute list by default. Add it using userattr or by editing the global userattr attribute. You may consider using <a href="#RHASSPY-attr-rhasspySpecials">rhasspySpecials</a> (<i>colorCommandMap</i> and/or <i>colorForceHue2rgb</i>) instead.</p>
   </li>
   <li>
     <a id="RHASSPY-attr-rhasspySpecials"></a><b>rhasspySpecials</b>
@@ -4361,6 +4455,11 @@ yellow=rgb FFFF00</code></p>
         <p>Example:</p>
         <p><code>attr lamp1 rhasspySpecials colorForceHue2rgb:1</code></p>
       </li>
+      <li><b>priority</b>
+        <p>Keywords <i>inRoom</i> and <i>outsideRoom</i> can be used, each followed by comma separated types to give priority in <i>GetNumeric</i>. This may eleminate requests in case of several possible devices or rooms to deliver requested info type.</p>
+        <p>Example:</p>
+        <p><code>attr sensor_outside_main rhasspySpecials priority:inRoom=temperature outsideRoom=temperature,humidity,pressure</code></p>
+      </li>
     </ul>
   </li>
 </ul>
@@ -4387,6 +4486,8 @@ yellow=rgb FFFF00</code></p>
   <li>SetTimer</li>
   <li>ConfirmAction</li>
   <li>CancelAction</li>
+  <li>ChoiceRoom</li>
+  <li>ChoiceDevice</li>
   <li>ReSpeak</li>
 </ul>
 
