@@ -1776,8 +1776,8 @@ sub getMapping {
 
     my $matchedMapping;
 
-    if ($fromHash) {
-        $matchedMapping = $hash->{helper}{devicemap}{devices}{$device}{intents}{$intent}{$subType} if defined $hash->{helper}{devicemap}{devices}{$device}{intents}{$intent}{$subType};
+    if ( $fromHash ) {
+        $matchedMapping = $hash->{helper}{devicemap}{devices}{$device}{intents}{$intent}{$subType} if  defined $subType && defined $hash->{helper}{devicemap}{devices}{$device}{intents}{$intent}{$subType};
         return $matchedMapping if $matchedMapping;
         
         for (sort keys %{$hash->{helper}{devicemap}{devices}{$device}{intents}{$intent}}) {
@@ -2904,10 +2904,11 @@ sub handleIntentSetNumeric {
 
     my $unit   = $data->{Unit};
     my $change = $data->{Change};
-    my $type   = $data->{Type}
-            # Type not defined? try to derive from Type (en and de)
-            // $internal_mappings->{Change}->{$change}->{Type} 
-            // $internal_mappings->{Change}->{$de_mappings->{ToEn}->{$change}}->{Type};
+    my $type   = $data->{Type};
+    if ( !defined $type && defined $change ){
+        $type   = $internal_mappings->{Change}->{$change}->{Type} 
+                // $internal_mappings->{Change}->{$de_mappings->{ToEn}->{$change}}->{Type};
+    }
     my $value  = $data->{Value};
     my $room   = getRoomName($hash, $data);
 
@@ -2950,7 +2951,7 @@ sub handleIntentSetNumeric {
     my $up = $change;
     $up    = $internal_mappings->{Change}->{$change}->{up} 
           // $internal_mappings->{Change}->{$de_mappings->{ToEn}->{$change}}->{up}
-          // ($change =~ m{\A$internal_mappings->{regex}->{upward}\z}xi || $change =~ m{\A$de_mappings->{regex}->{upward}\z}xi ) ? 1 
+          // defined $change && ($change =~ m{\A$internal_mappings->{regex}->{upward}\z}xi || $change =~ m{\A$de_mappings->{regex}->{upward}\z}xi ) ? 1 
            : 0;
 
     my $forcePercent = ( defined $mapping->{map} && lc $mapping->{map} eq 'percent' ) ? 1 : 0;
@@ -4351,7 +4352,7 @@ i="i am hungry" f="set Stove on" d="Stove" c="would you like roast pork"</code><
   </li>
 
   <li>
-    <a id="RHASSPY-attr-forceNext"></a><b>forceNEXT</b>
+    <a id="RHASSPY-attr-forceNEXT"></a><b>forceNEXT</b>
     <p>If set to 1, RHASSPY will forward incoming messages also to further MQTT2-IO-client modules like MQTT2_DEVICE, even if the topic matches to one of it's own subscriptions. By default, these messages will not be forwarded for better compability with autocreate feature on MQTT2_DEVICE. See also <a href="#MQTT2_CLIENTclientOrder">clientOrder attribute in MQTT2 IO-type commandrefs</a>; setting this in one instance of RHASSPY might affect others, too.</p>
   </li>
 </ul>
