@@ -139,6 +139,8 @@ Full-Example for a define:
 define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceType=.+ defaultRoom=wohnzimmer language=de fhemId=fhem1 prefix=rhasspy2 useGenericAttrs=0 encoding=cp-1252
 ```
 
+**Important**: After defining the module, check if the attribute `IODev` has been set. If not, manually add it with `attr <deviceName> IODev <MQTT2_CLIENT deviceName>`.
+
 
 ### Set-Commands (SET)
 * **customSlot**\
