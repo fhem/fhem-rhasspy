@@ -4148,6 +4148,9 @@ When changing something relevant within FHEM for either the data structure in</p
 hermes/dialogueManager/sessionStarted<br>
 hermes/dialogueManager/sessionEnded</code></p>
 
+<p>&nbsp;</p>
+<p><b>Important</b>: After defining the module, check if the attribute <i>IODev</i> has been set. If not, manually add it with <code>attr &lt;deviceName&gt; IODev &lt;MQTT2_CLIENT deviceName&gt;</code>.</p>
+
 <a id="RHASSPY-set"></a>
 <h4>Set</h4>
 <ul>
