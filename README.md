@@ -515,6 +515,12 @@ All of the following options are optional.
   Example:\
   `attr sensor_outside_main rhasspySpecials priority:inRoom=temperature outsideRoom=temperature,humidity,pressure`
 
+* **scenes**\
+  Used to insert scene-names if using genericDeviceType to switch a LightScene-Device.
+  
+  Example:\
+  `attr LightScene rhasspySpecials scenes: scene1="Sleeping" scene2="watch TV" scene3=none scene4=none`
+
 ## Intents
 Intents are used to tell FHEM what to do after receiving a voice-/text-command. This module has some build-in intents.
 
