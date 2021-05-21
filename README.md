@@ -469,7 +469,7 @@ yellow=rgb FFFF00
 key=value line by line arguments similar to rhasspyTweaks.\
 Currently some color light options besides group and venetian blind related stuff is implemented, this could be the place to hold additional options, e.g. for confirmation requests. You may use several of the following lines.
 
-* **group**
+* **group**\
 If set, the device will not be directly addressed, but the mentioned group - typically a FHEM structure device or a HUEDevice-type group. This has the advantage of saving RF ressources and/or already implemented logics.\
 Note: all addressed devices will be switched, even if they are not member of the rhasspyGroup. Each group should only be addressed once, but it's recommended to put this info in all devices under RHASSPY control in the same external group logic.\
 All of the following options are optional.
@@ -482,7 +482,7 @@ All of the following options are optional.
   Example:\
   `attr lamp1 rhasspySpecials group:async_delay=100 prio=1 group=lights`
 
-* **venetianBlind**
+* **venetianBlind**\
   `attr blind1 rhasspySpecials venetianBlind:setter=dim device=blind1_slats`
 
   Explanation (one of the two arguments is mandatory):
@@ -490,19 +490,19 @@ All of the following options are optional.
   * **setter** is the set command to control slat angle, e.g. positionSlat for CUL_HM or older ZWave type devices
   * **device** is needed if the slat command has to be issued towards a different device (applies e.g. to newer ZWave type devices). If set, the slat target position will be set to the same level than the main device.
 
-* **colorCommandMap**
+* **colorCommandMap**\
   Allows mapping of values from the Color key to individual commands.
 
   Example:\
   `attr lamp1 rhasspySpecials colorCommandMap:0='rgb FF0000' 120='rgb 00FF00' 240='rgb 0000FF'`
 
-* **colorForceHue2rgb**
+* **colorForceHue2rgb**\
   Defaults to "0". If set, a rgb command will be issued, even if the device is capable to handle hue commands.
 
   Example:\
   `attr lamp1 rhasspySpecials colorForceHue2rgb:1`
 
-* **priority**
+* **priority**\
   Keywords *inRoom* and *outsideRoom* can be used, each followed by comma separated types to give priority in GetNumeric. This may eleminate requests in case of several possible devices or rooms to deliver requested info type.
 
   Example:\
