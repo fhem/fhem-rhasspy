@@ -217,7 +217,7 @@ define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceT
 * **IODev**\
   The MQTT2_CLIENT device FHEM-rhasspy is connected to.
   Example: `attr <rhasspyDevice> IODev rhasspyMQTT2`
-* **configFile**\
+* **languageFile**\
   Path to the language-config file.\
   If this attribute isn't set, english is used for voice responses.
   
