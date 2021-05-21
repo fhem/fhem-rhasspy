@@ -4486,7 +4486,7 @@ yellow=rgb FFFF00</code></p>
         <p>If set, the slat target position will be set to the same level than the main device.</p>
       </li>
       <li><b>colorCommandMap</b>
-        <p>Allows mapping of values from the <i>Color></i> key to individual commands.</p>
+        <p>Allows mapping of values from the <i>Color</i> key to individual commands.</p>
         <p>Example:</p>
         <p><code>attr lamp1 rhasspySpecials colorCommandMap:0='rgb FF0000' 120='rgb 00FF00' 240='rgb 0000FF'</code></p>
       </li>
