@@ -333,9 +333,18 @@ sub Define {
     my $type = shift @{$anon};
     my $Rhasspy  = $h->{baseUrl} // shift @{$anon} // q{http://127.0.0.1:12101};
     my $defaultRoom = $h->{defaultRoom} // shift @{$anon} // q{default}; 
+
+    my @unknown;
+    for (keys %{$h}) {
+        push @unknown, $_ if $_ !~ m{\A(baseUrl|defaultRoom|language|devspec|fhemId|prefix|encoding|useGenericAttrs)\z}xm;
+    }
+    my $err = join q{, }, @unknown;
+    return "unknown key(s) in DEF: $err" if @unknown && $init_done;
+    Log3( $hash, 1, "[$name] unknown key(s) in DEF: $err") if @unknown;
+
     $hash->{defaultRoom} = $defaultRoom;
     my $language = $h->{language} // shift @{$anon} // lc AttrVal('global','language','en');
-    $hash->{MODULE_VERSION} = '0.4.14';
+    $hash->{MODULE_VERSION} = '0.4.15';
     $hash->{baseUrl} = $Rhasspy;
     #$hash->{helper}{defaultRoom} = $defaultRoom;
     initialize_Language($hash, $language) if !defined $hash->{LANGUAGE} || $hash->{LANGUAGE} ne $language;
@@ -360,18 +369,20 @@ sub Define {
 
 sub firstInit {
     my $hash = shift // return;
-  
-    # IO    
+
+    my $name = $hash->{NAME};
+
+    # IO
     AssignIoPort($hash);
-    my $IODev = AttrVal($hash->{NAME},'IODev',undef);
+    my $IODev = AttrVal( $name, 'IODev', ReadingsVal( $name, 'IODev', InternalVal($name, 'IODev', undef )));
 
     return if !$init_done || !defined $IODev;
     RemoveInternalTimer($hash);
 
     IOWrite($hash, 'subscriptions', join q{ }, @topics) if InternalVal($IODev,'TYPE',undef) eq 'MQTT2_CLIENT';
 
-    fetchSiteIds($hash) if !ReadingsVal( $hash->{NAME}, 'siteIds', 0 );
-    initialize_rhasspyTweaks($hash, AttrVal($hash->{NAME},'rhasspyTweaks', undef ));
+    fetchSiteIds($hash) if !ReadingsVal( $name, 'siteIds', 0 );
+    initialize_rhasspyTweaks($hash, AttrVal($name,'rhasspyTweaks', undef ));
     configure_DialogManager($hash);
     initialize_devicemap($hash);
 
@@ -2025,7 +2036,7 @@ sub Parse {
     for my $dev (@instances) {
         my $hash = $defs{$dev};
         # Name mit IODev vergleichen
-        next if $ioname ne AttrVal($hash->{NAME}, 'IODev', undef);
+        next if $ioname ne AttrVal($hash->{NAME}, 'IODev', ReadingsVal($hash->{NAME}, 'IODev', InternalVal($hash->{NAME}, 'IODev', 'none')));
         next if IsDisabled( $hash->{NAME} );
         my $topicpart = qq{/$hash->{LANGUAGE}\.$hash->{fhemId}\[._]|hermes/dialogueManager};
         next if $topic !~ m{$topicpart}x;
@@ -2302,7 +2313,7 @@ sub updateSlots {
         @colors    = ('') if !@colors;
         @types     = ('') if !@types;
         @groups    = ('') if !@groups;
-        @shortcuts = ('') if !@shortcuts;
+        #@shortcuts = ('') if !@shortcuts; # forum: https://forum.fhem.de/index.php/topic,119447.msg1157700.html#msg1157700
         #$scenes    = []   if !@{$scenes};
         #$scdevs    = []   if !@{$scdevs};
     }
@@ -4065,7 +4076,6 @@ __END__
 # "rhasspySpecials" bzw. rhasspyTweaks als weitere Attribute
 Denkbare Verwendung:
 - siteId2room für mobile Geräte (Denkbare Anwendungsfälle: Auswertung BT-RSSI per Perl, aktives Setzen über ein Reading? Oder einen intent? (tweak)
-- Ansteuerung von Lamellenpositionen (auch an anderem Device?) (special) (erledigt?)
 - Bestätigungs-Mapping (special)
 
 # Sonstiges, siehe insbes. https://forum.fhem.de/index.php/topic,119447.msg1148832.html#msg1148832
@@ -4076,6 +4086,10 @@ Denkbare Verwendung:
 - Farbe und Farbtemperatur (fast fertig?)
 - Hat man in einem Raum einen Satelliten aber kein Device mit der siteId/Raum, kann man den Satelliten bei z.B. dem Timer nicht ansprechen, weil der Raum nicht in den Slots ist.
   Irgendwie müssen wir die neue siteId in den Slot Rooms bringen
+
+# Parameter-Check für define? Anregung DrBasch aus https://forum.fhem.de/index.php/topic,119447.msg1157700.html#msg1157700
+
+# Keine shortcuts-Intents, wenn Attribut nicht gesetzt: Anregung DrBasch aus https://forum.fhem.de/index.php/topic,119447.msg1157700.html#msg1157700
 
 =end ToDo
 
@@ -4131,16 +4145,8 @@ attr rhasspyMQTT2 clientOrder RHASSPY MQTT_GENERIC_BRIDGE MQTT2_DEVICE<br>
 attr rhasspyMQTT2 subscriptions hermes/intent/+ hermes/dialogueManager/sessionStarted hermes/dialogueManager/sessionEnded</code></p>
 <p><code>define Rhasspy RHASSPY devspec=room=Rhasspy defaultRoom=Livingroom language=en</code></p>
 
-<p><a id="RHASSPY-list"></a><b>Note:</b> RHASSPY consolidates a lot of data from different sources. The <b>final data structure RHASSPY uses</b> at runtime can be viewed using the <a href="#list">list command</a>. It's highly recommended to have a close look at this data structure, especially when starting with RHASSPY or in case something doesn't work as expected!<br> 
-When changing something relevant within FHEM for either the data structure in</p>
-<ul>
-  <li><b>RHASSPY</b> (this form is used when reffering to module or the FHEM device) or for </li>
-  <li><b>Rhasspy</b> (this form is used when reffering to the remote service), </li>
-</ul>
-<p>these changes must be get to known to RHASSPY and (often, but not allways) to Rhasspy. See the different versions provided by the <a href="#RHASSPY-set-update">update command</a>.</p>
-
 <p><b>Additionals remarks on MQTT2-IOs:</b></p>
-<p>Using a separate MQTT server (and not the internal MQTT2_SERVER) is highly recommended, as the Rhasspy scripts also use the MQTT protocol for internal (sound!) data transfers. Best way is to either use MQTT2_CLIENT (see below) or bridge only the relevant topics from mosquitto to MQTT2_SERVER (see e.g. <a href="http://www.steves-internet-guide.com/mosquitto-bridge-configuration/">http://www.steves-internet-guide.com/mosquitto-bridge-configuration</a> for the principles). When using MQTT2_CLIENT, it's necessary to set <code>clientOrder</code> to include RHASSPY (as most likely, it's the only module listening to the CLIENT). It could be just set to <code>attr &lt;m2client&gt; clientOrder RHASSPY</code></p>
+<p>Using a separate MQTT server (and not the internal MQTT2_SERVER) is highly recommended, as the Rhasspy scripts also use the MQTT protocol for internal (sound!) data transfers. Best way is to either use MQTT2_CLIENT (see above) or bridge only the relevant topics from mosquitto to MQTT2_SERVER (see e.g. <a href="http://www.steves-internet-guide.com/mosquitto-bridge-configuration/">http://www.steves-internet-guide.com/mosquitto-bridge-configuration</a> for the principles). When using MQTT2_CLIENT, it's necessary to set <code>clientOrder</code> to include RHASSPY (as most likely it's the only module listening to the CLIENT it could be just set to <code>attr &lt;m2client&gt; clientOrder RHASSPY</code>)</p>
 <p>Furthermore, you are highly encouraged to restrict subscriptions only to the relevant topics:</p>
 <p><code>attr &lt;m2client&gt; subscriptions setByTheProgram</code></p>
 <p>In case you are using the MQTT server also for other purposes than Rhasspy, you have to set <code>subscriptions</code> manually to at least include the following topics additionally to the other subscriptions desired for other purposes.</p>
@@ -4148,8 +4154,15 @@ When changing something relevant within FHEM for either the data structure in</p
 hermes/dialogueManager/sessionStarted<br>
 hermes/dialogueManager/sessionEnded</code></p>
 
-<p>&nbsp;</p>
-<p><b>Important</b>: After defining the module, check if the attribute <i>IODev</i> has been set. If not, manually add it with <code>attr &lt;deviceName&gt; IODev &lt;MQTT2_CLIENT deviceName&gt;</code>.</p>
+<p><b>Important</b>: After defining the RHASSPY module, you are supposed to manually set the attribute <i>IODev</i> to force a non-dynamic IO assignement. Use e.g. <code>attr &lt;deviceName&gt; IODev &lt;m2client&gt;</code>.</p>
+
+<p><a id="RHASSPY-list"></a><b>Note:</b> RHASSPY consolidates a lot of data from different sources. The <b>final data structure RHASSPY uses</b> at runtime can be viewed using the <a href="#list">list command</a>. It's highly recommended to have a close look at this data structure, especially when starting with RHASSPY or in case something doesn't work as expected!<br> 
+When changing something relevant within FHEM for either the data structure in</p>
+<ul>
+  <li><b>RHASSPY</b> (this form is used when reffering to module or the FHEM device) or for </li>
+  <li><b>Rhasspy</b> (this form is used when reffering to the remote service), </li>
+</ul>
+<p>these changes must be get to known to RHASSPY and (often, but not allways) to Rhasspy. See the different versions provided by the <a href="#RHASSPY-set-update">update command</a>.</p>
 
 <a id="RHASSPY-set"></a>
 <h4>Set</h4>
