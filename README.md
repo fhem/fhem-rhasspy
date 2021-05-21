@@ -479,8 +479,34 @@ All of the following options are optional.
   * **prio**
     Numeric value, defaults to "0". _prio_ and _async_delay_ will be used to determine the sending order as follows: First devices will be those with lowest prio arg, second sort argument is async_delay with lowest value first.
 
-Example:\
-`attr lamp1 rhasspySpecials group:async_delay=100 prio=1 group=lights`
+  Example:\
+  `attr lamp1 rhasspySpecials group:async_delay=100 prio=1 group=lights`
+
+* **venetianBlind**
+  `attr blind1 rhasspySpecials venetianBlind:setter=dim device=blind1_slats`
+
+  Explanation (one of the two arguments is mandatory):
+
+  * **setter** is the set command to control slat angle, e.g. positionSlat for CUL_HM or older ZWave type devices
+  * **device** is needed if the slat command has to be issued towards a different device (applies e.g. to newer ZWave type devices). If set, the slat target position will be set to the same level than the main device.
+
+* **colorCommandMap**
+  Allows mapping of values from the Color key to individual commands.
+
+  Example:\
+  `attr lamp1 rhasspySpecials colorCommandMap:0='rgb FF0000' 120='rgb 00FF00' 240='rgb 0000FF'`
+
+* **colorForceHue2rgb**
+  Defaults to "0". If set, a rgb command will be issued, even if the device is capable to handle hue commands.
+
+  Example:\
+  `attr lamp1 rhasspySpecials colorForceHue2rgb:1`
+
+* **priority**
+  Keywords *inRoom* and *outsideRoom* can be used, each followed by comma separated types to give priority in GetNumeric. This may eleminate requests in case of several possible devices or rooms to deliver requested info type.
+
+  Example:\
+  `attr sensor_outside_main rhasspySpecials priority:inRoom=temperature outsideRoom=temperature,humidity,pressure`
 
 ## Intents
 Intents are used to tell FHEM what to do after receiving a voice-/text-command. This module has some build-in intents.
