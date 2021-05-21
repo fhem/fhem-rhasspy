@@ -4375,14 +4375,37 @@ i="i am hungry" f="set Stove on" d="Stove" c="would you like roast pork"</code><
 
 <p>&nbsp;</p>
 <a id="RHASSPY-attr-subdevice"></a>
-<p><b>For the subordinated devices</b>, a list of the possible attributes is automatically extended by several further entries</p>
-<p>The names of these attributes all start with the <i>prefix</i> previously defined in RHASSPY - except for <a href="#RHASSPY-genericDeviceType">genericDeviceType</a> (gDT).<br>
+<p><b>For the subordinated devices</b>, a list of the possible attributes is automatically extended by several further entries.</p>
+<p>There are two ways to tell RHASSPY which devices it should control:</p>
+<ul>
+  <li><a href="#RHASSPY-genericDeviceType">genericDeviceType</a> (gDT)</li>
+  <li><a href="#RHASSPY-rhasspySpecificAttributes">RHASSPY specific attributes</a></li>
+</ul>
+<p>It's also possible to mix these two options if one of it isn't enough.</p>
+
+<a id="RHASSPY-genericDeviceType"></a><p><b>genericDeviceType</b></p>
+<p>If this attribute is set, RHASSPY will try to determine mapping (and other) information from the attributes already present (if devices match devspec). Currently the following subset of genericDeviceType is supported:</p>
+<ul>
+  <li>switch</li>
+  <li>light</li>
+  <li>thermostat</li>
+  <li>thermometer</li>
+  <li>blind</li>
+  <li>media</li>
+</ul>
+<p>When using genericDeviceType, collected information about the device are for example:</p>
+<ul>
+  <li>the name (NAME or alias)</li>
+  <li>the ROOM or GROUP the device is in</li>
+  <li>how to GET information from the device</li>
+  <li>how to SET state/values</li>
+</ul>
+<p>This is the easiest way to get devices to work with RHASSPY. In some cases it may happen that gDT delivers to less or not suitable information for this particular device. Then it's possible to overwrite this with the following RHASSPY specific device attributes.</p>
+<a href="#RHASSPY-rhasspySpecificAttributes"></a><p><b>RHASSPY specific attributes</b></p>
+<p>The names of these attributes all start with the <i>prefix</i> previously defined in RHASSPY<br>
 These attributes are used to configure the actual mapping to the intents and the content sent by Rhasspy.</p>
-<p>Note: As the analyses of the gDT is intented to lead to fast configuration progress, it's highly recommended to use this as a starting point. All other RHASSPY-specific attributes will then be considered as a user command to <b>overwrite</b> the results provided by the automatics initiated by gDT usage.</p>
-    
 <p>By default, the following attribute names are used: rhasspyName, rhasspyRoom, rhasspyGroup, rhasspyChannels, rhasspyColors, rhasspySpecials.<br>
 Each of the keywords found in these attributes will be sent by <a href="#RHASSPY-set-update">update</a> to Rhasspy to create the corresponding slot.</p>
-
 <ul>
   <li>
     <a id="RHASSPY-attr-rhasspyName"></a><b>rhasspyName</b>
