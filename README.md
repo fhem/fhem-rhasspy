@@ -26,11 +26,14 @@
 &nbsp;&nbsp;&nbsp;&nbsp;[SetOnOffGroup](#setonoffgroup)\
 &nbsp;&nbsp;&nbsp;&nbsp;[GetOnOff](#getonoff)\
 &nbsp;&nbsp;&nbsp;&nbsp;[SetNumeric](#setnumeric)\
+&nbsp;&nbsp;&nbsp;&nbsp;[SetNumericGroup](#setnumericgroup)\
 &nbsp;&nbsp;&nbsp;&nbsp;[GetNumeric](#getnumeric)\
 &nbsp;&nbsp;&nbsp;&nbsp;[GetState](#getstate)\
 &nbsp;&nbsp;&nbsp;&nbsp;[MediaControls](#mediacontrols)\
 &nbsp;&nbsp;&nbsp;&nbsp;[MediaChannels](#mediachannels)\
 &nbsp;&nbsp;&nbsp;&nbsp;[SetColor](#setcolor)\
+&nbsp;&nbsp;&nbsp;&nbsp;[SetColorGroup](#setcolorgroup)\
+&nbsp;&nbsp;&nbsp;&nbsp;[SetScene](#setscene)\
 &nbsp;&nbsp;&nbsp;&nbsp;[GetTime](#gettime)\
 &nbsp;&nbsp;&nbsp;&nbsp;[GetWeekDay](#getweekday)\
 &nbsp;&nbsp;&nbsp;&nbsp;[SetTimer](#settimer)\
@@ -680,6 +683,8 @@ Optional tags:
 * Room
 * Unit
 
+### SetNumericGroup
+
 ### GetNumeric
 
 Intent to question values like actual temperature, brightness, volume, ...
@@ -900,6 +905,11 @@ Required tags:
 
 Optional tags
 * Room
+
+### SetColorGroup
+
+### SetScene
+
 
 ### GetTime
 
