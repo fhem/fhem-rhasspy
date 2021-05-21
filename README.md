@@ -466,24 +466,21 @@ yellow=rgb FFFF00
 ```
 
 ### Attribute rhasspySpecials
-key=value line by line arguments similar to rhasspyTweaks\
-Currently only group related stuff is implemented, this could be the place to hold additional options, e.g. for confirmation requests.
-
-Example:
-```
-attr lamp1 rhasspySpecials group:async_delay=100 prio=1 group=lights
-```
-
-Explanation on the above group line. All arguments are optional:
+key=value line by line arguments similar to rhasspyTweaks.\
+Currently some color light options besides group and venetian blind related stuff is implemented, this could be the place to hold additional options, e.g. for confirmation requests. You may use several of the following lines.
 
 * **group**
-  If set, the device will not be directly addressed, but the mentioned group - typically a FHEM structure device or a HUEDevice-type group. This has the advantage of saving RF ressources and/or already implemented logics.\
-  Note: all addressed devices will be switched, even if they are not member of the rhasspyGroup. Each group should only be addressed once, but it's recommended to put this info in all devices under RHASSPY control in the same external group logic.
-* **async_delay**
-  Float nummeric value, just as async_delay in structure; the delay will be obeyed prior to the next sending command.
-* **prio**
-  Numeric value, defaults to "0". prio and async_delay will be used to determine the sending order as follows: first devices will be those with lowest prio arg, second sort argument is async_delay with lowest value first
+If set, the device will not be directly addressed, but the mentioned group - typically a FHEM structure device or a HUEDevice-type group. This has the advantage of saving RF ressources and/or already implemented logics.\
+Note: all addressed devices will be switched, even if they are not member of the rhasspyGroup. Each group should only be addressed once, but it's recommended to put this info in all devices under RHASSPY control in the same external group logic.\
+All of the following options are optional.
 
+  * **async_delay**
+    Float nummeric value, just as async_delay in structure; the delay will be obeyed prior to the next sending command.
+  * **prio**
+    Numeric value, defaults to "0". _prio_ and _async_delay_ will be used to determine the sending order as follows: First devices will be those with lowest prio arg, second sort argument is async_delay with lowest value first.
+
+Example:\
+`attr lamp1 rhasspySpecials group:async_delay=100 prio=1 group=lights`
 
 ## Intents
 Intents are used to tell FHEM what to do after receiving a voice-/text-command. This module has some build-in intents.
