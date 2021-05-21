@@ -39,6 +39,10 @@
 &nbsp;&nbsp;&nbsp;&nbsp;[SetTimer](#settimer)\
 &nbsp;&nbsp;&nbsp;&nbsp;[SetMute](#setmute)\
 &nbsp;&nbsp;&nbsp;&nbsp;[ReSpeak](#respeak)\
+&nbsp;&nbsp;&nbsp;&nbsp;[ConfirmAction](#confirmaction)\
+&nbsp;&nbsp;&nbsp;&nbsp;[CancelAction](#cancelaction)\
+&nbsp;&nbsp;&nbsp;&nbsp;[ChoiceRoom](#choiceroom)\
+&nbsp;&nbsp;&nbsp;&nbsp;[ChoiceDevice](#choicedevice)\
 [Custom Intents](#custom-intents)\
 [Tips & Tricks](#tips--tricks)\
 &nbsp;&nbsp;&nbsp;&nbsp;[Custom Converter to use Real numbers](#custom-converter-to-use-real-numbers)\
@@ -1052,6 +1056,10 @@ excuse me
 can you [please] repeat the last sentence
 ```
 
+### ConfirmAction
+### CancelAction
+### ChoiceRoom
+### ChoiceDevice
 
 ## Custom Intents
 
