@@ -300,7 +300,7 @@ define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceT
     * **ct**: Numeric value for timeout in seconds, default: 15
 
 * **rhasspyTweaks**\
-  Currently sets additional settings for timers and slot-updates to Rhasspy. May contain further custom settings in future versions like siteId2room info or code links, allowed commands, confirmation requests etc.\
+  Currently sets additional settings for timers and slot-updates to Rhasspy. May contain further custom settings in future versions like siteId2room info or code links, allowed commands, confirmation requests etc.
   Could be the place to configure additional things like additional siteId2room info or code links, allowed commands, duration of SetTimer sounds, confirmation requests etc.\
   * **timerLimits**\
     See intent [SetTimer](#settimer)
@@ -316,7 +316,7 @@ define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceT
     By default, RHASSPY will overwrite all generated slots. Setting this to false will change this.
   * **timeouts**\
     At the moment the keywords _confirm_ and/or _default_ can be used to change the corresponding defaults (15 seconds / 20 seconds) used for dialogue timeouts.\
-    Example:\
+    Example:
 	
     `timeouts: confirm=25 default=30`
 
