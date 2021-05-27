@@ -1,4 +1,4 @@
-# $Id: 10_RHASSPY.pm 24348 + more dialog specifics Beta-User $
+# $Id: 10_RHASSPY.pm 24348 + Register.pm Beta-User $
 ###########################################################################
 #
 # FHEM RHASSPY modul  (https://github.com/rhasspy)
@@ -39,7 +39,7 @@ use HttpUtils;
 use utf8;
 use List::Util 1.45 qw(max min uniq);
 use Data::Dumper;
-use Scalar::Util qw(weaken);
+use FHEM::Core::Timer::Register qw(:ALL);
 
 sub ::RHASSPY_Initialize { goto &Initialize }
 
@@ -80,6 +80,7 @@ my $languagevars = {
     'DefaultError' => "Sorry but something seems not to work as expected",
     'NoValidData' => "Sorry but the received data is not sufficient to derive any action",
     'NoDeviceFound' => "Sorry but I could not find a matching device",
+    'NoTimedOnDeviceFound' => "Sorry but device does not support requested timed on or off command",
     'NoMappingFound' => "Sorry but I could not find a suitable mapping",
     'NoNewValDerived' => "Sorry but I could not calculate a new value to set",
     'NoActiveMediaDevice' => "Sorry no active playback device",
@@ -311,7 +312,7 @@ sub Initialize {
     $hash->{DefFn}       = \&Define;
     $hash->{UndefFn}     = \&Undefine;
     $hash->{DeleteFn}    = \&Delete;
-    $hash->{RenameFn}    = \&Rename;
+    #$hash->{RenameFn}    = \&Rename;
     $hash->{SetFn}       = \&Set;
     $hash->{AttrFn}      = \&Attr;
     $hash->{AttrList}    = "IODev rhasspyIntents:textField-long rhasspyShortcuts:textField-long rhasspyTweaks:textField-long response:textField-long forceNEXT:0,1 disable:0,1 disabledForIntervals languageFile " . $readingFnAttributes;
@@ -344,14 +345,12 @@ sub Define {
 
     $hash->{defaultRoom} = $defaultRoom;
     my $language = $h->{language} // shift @{$anon} // lc AttrVal('global','language','en');
-    $hash->{MODULE_VERSION} = '0.4.15';
+    $hash->{MODULE_VERSION} = '0.4.16';
     $hash->{baseUrl} = $Rhasspy;
-    #$hash->{helper}{defaultRoom} = $defaultRoom;
     initialize_Language($hash, $language) if !defined $hash->{LANGUAGE} || $hash->{LANGUAGE} ne $language;
     $hash->{LANGUAGE} = $language;
     $hash->{devspec} = $h->{devspec} // q{room=Rhasspy};
     $hash->{fhemId} = $h->{fhemId} // q{fhem};
-    #$hash->{baseId} = $h->{baseId} // q{default};
     initialize_prefix($hash, $h->{prefix}) if !defined $hash->{prefix} || defined $h->{prefix} && $hash->{prefix} ne $h->{prefix};
     $hash->{prefix} = $h->{prefix} // q{rhasspy};
     $hash->{encoding} = $h->{encoding} // q{utf8};
@@ -378,7 +377,8 @@ sub firstInit {
 
     return if !$init_done || !defined $IODev;
     RemoveInternalTimer($hash);
-
+    deleteAllRegIntTimer($hash);
+  
     IOWrite($hash, 'subscriptions', join q{ }, @topics) if InternalVal($IODev,'TYPE',undef) eq 'MQTT2_CLIENT';
 
     fetchSiteIds($hash) if !ReadingsVal( $name, 'siteIds', 0 );
@@ -460,7 +460,7 @@ sub initialize_prefix {
 sub Undefine {
     my $hash = shift // return;
 
-    deleteAllRegisteredInternalTimer($hash);
+    deleteAllRegIntTimer($hash);
     RemoveInternalTimer($hash);
 
 
@@ -471,7 +471,7 @@ sub Delete {
     my $hash = shift // return;
     #my $prefix = $hash->{prefix} // return;
 
-    deleteAllRegisteredInternalTimer($hash);
+    deleteAllRegIntTimer($hash);
     RemoveInternalTimer($hash);
 
 # DELETE POD AFTER TESTS ARE COMPLETED
@@ -505,13 +505,6 @@ sub Delete {
     return;
 }
 
-sub Rename {
-    my $new_name = shift // return;
-    my $old_name = shift // return;
-
-    my $hash = $defs{$new_name} // return;
-    return renameAllRegisteredInternalTimer($hash, $new_name, $old_name);
-}
 
 # Set Befehl aufgerufen
 sub Set {
@@ -1039,7 +1032,8 @@ sub _analyze_genDevType {
             $currentMapping->{SetNumeric} = {
                 brightness => { cmd => 'brightness', currentVal => 'brightness', maxVal => '255', minVal => '0', step => '10', map => 'percent', type => 'brightness'}};
         }
-        $currentMapping = _analyze_genDevType_setter( $allset, $currentMapping, $device );
+        $currentMapping = _analyze_genDevType_setter( $hash, $device, $allset, $currentMapping );
+        #$currentMapping = _analyze_genDevType_setter( $allset, $currentMapping, $device );
         $hash->{helper}{devicemap}{devices}{$device}{intents} = $currentMapping;
     }
     elsif ( $gdt eq 'thermostat' ) {
@@ -1189,7 +1183,7 @@ sub RHASSPY_DialogTimeout {
 
     my $data     = shift // $hash->{helper}{'.delayed'}->{$identiy};
     delete $hash->{helper}{'.delayed'}{$identiy};
-    deleteSingleRegisteredInternalTimer($identiy, $hash); 
+    deleteSingleRegIntTimer($identiy, $hash, 1); 
 
     my $siteId = $data->{siteId};
     my $toDisable = defined $data->{'.ENABLED'} ? $data->{'.ENABLED'} : [qw(ConfirmAction CancelAction)];
@@ -1215,7 +1209,7 @@ sub setDialogTimeout {
     $response = $hash->{helper}{lng}->{responses}->{DefaultConfirmationReceived} if $response eq 'default';
     $hash->{helper}{'.delayed'}{$identiy} = $data;
 
-    resetRegisteredInternalTimer( $identiy, time + $timeout, \&RHASSPY_DialogTimeout, $hash, 0);
+    resetRegIntTimer( $identiy, time + $timeout, \&RHASSPY_DialogTimeout, $hash, 0);
     #InternalTimer(time + $timeout, \&RHASSPY_DialogTimeout, $hash, 0);
 
     #interactive dialogue as described in https://rhasspy.readthedocs.io/en/latest/reference/#dialoguemanager_continuesession and https://docs.snips.ai/articles/platform/dialog/multi-turn-dialog
@@ -2076,6 +2070,7 @@ sub updateLastIntentReadings {
 my $dispatchFns = {
     Shortcuts       => \&handleIntentShortcuts, 
     SetOnOff        => \&handleIntentSetOnOff,
+    SetTimedOnOff   => \&handleIntentSetTimedOnOff,
     SetOnOffGroup   => \&handleIntentSetOnOffGroup,
     GetOnOff        => \&handleIntentGetOnOff,
     SetNumeric      => \&handleIntentSetNumeric,
@@ -2776,6 +2771,73 @@ sub handleIntentSetOnOffGroup {
     respond ($hash, $data->{requestType}, $data->{sessionId}, $data->{siteId}, getResponse($hash, 'DefaultConfirmation'));
     return $updatedList;
 }
+
+# Handle incoming "SetTimedOnOff" intents
+sub handleIntentSetTimedOnOff {
+    my $hash = shift // return;
+    my $data = shift // return;
+    my ($value, $numericValue, $device, $room, $siteId, $mapping, $response);
+    
+    Log3($hash->{NAME}, 5, "handleIntentSetTimedOnOff called");
+
+    return respond ($hash, $data->{requestType}, $data->{sessionId}, $data->{siteId}, $hash->{helper}{lng}->{responses}->{duration_not_understood}) 
+    if !defined $data->{Hourabs} && !defined $data->{Hour} && !defined $data->{Min} && !defined $data->{Sec};
+    
+    # Device AND Value must exist
+    if ( exists $data->{Device} && exists $data->{Value} ) {
+        $room = getRoomName($hash, $data);
+        $value = $data->{Value};
+        $value = $value eq $de_mappings->{on} ? 'on' : $value; #Beta-User: compability
+        $device = getDeviceByName($hash, $room, $data->{Device});
+        $mapping = getMapping($hash, $device, 'SetOnOff', undef, defined $hash->{helper}{devicemap});
+
+        # Mapping found?
+        if ( defined $device && defined $mapping ) {
+            my $cmdOn  = $mapping->{cmdOn} // 'on';
+            my $cmdOff = $mapping->{cmdOff} // 'off';
+            my $cmd = $value eq 'on' ? $cmdOn : $cmdOff;
+            $cmd .= "-for-timer";
+
+            my $allset = getAllSets($device);
+            return respond ($hash, $data->{requestType}, $data->{sessionId}, $data->{siteId}, getResponse($hash, 'NoTimedOnDeviceFound')) if $allset !~ m{\b$cmd([\b:\s]|\Z)}xms;
+
+            my $hour = 0;
+            my $now1 = time;
+            my $now = $now1;
+            my @time = localtime($now);
+            if ( defined $data->{Hourabs} ) {
+                $hour  = $data->{Hourabs};
+                $now1 = $value - ($time[2] * HOURSECONDS) - ($time[1] * MINUTESECONDS) - $time[0]; #last midnight
+            }
+            elsif ($data->{Hour}) {
+                $hour = $data->{Hour};
+            }
+            $now1 += HOURSECONDS * $hour;
+            $now1 += MINUTESECONDS * $data->{Min} if $data->{Min};
+            $now1 += $data->{Sec} if $data->{Sec};
+
+            $now1 += +DAYSECONDS if $now1 < $now;
+            
+            $cmd .= " $now1";
+            # execute Cmd
+            analyzeAndRunCmd($hash, $device, $cmd);
+            Log3($hash->{NAME}, 5, "Running command [$cmd] on device [$device]" );
+
+            # Define response
+            if ( defined $mapping->{response} ) { 
+                $numericValue = $value eq 'on' ? 1 : 0;
+                $response = _getValue($hash, $device, $mapping->{response}, $numericValue, $room); 
+                Log3($hash->{NAME}, 5, "Response is $response" );
+            }
+            else { $response = getResponse($hash, 'DefaultConfirmation'); }
+        }
+    }
+    # Send response
+    $response = $response  // getResponse($hash, 'DefaultError');
+    respond ($hash, $data->{requestType}, $data->{sessionId}, $data->{siteId}, $response);
+    return $device; 
+}
+
 
 # Handle incomint GetOnOff intents
 sub handleIntentGetOnOff {
@@ -3722,7 +3784,7 @@ sub handleIntentCancelAction {
     #might lead to problems, if there's more than one timeout running...
     #RemoveInternalTimer( $hash, \&RHASSPY_DialogTimeout );
     my $identiy = qq($data->{sessionId});
-    deleteSingleRegisteredInternalTimer($identiy, $hash);
+    deleteSingleRegIntTimer($identiy, $hash);
     $response = $hash->{helper}{lng}->{responses}->{ 'DefaultCancelConfirmation' };
     configure_DialogManager($hash, $data->{siteId}, $toDisable, 'false');
 
@@ -3744,7 +3806,7 @@ sub handleIntentConfirmAction {
     my $identiy = qq($data->{sessionId});
     my $data_saved = $hash->{helper}{'.delayed'}->{$identiy};
     delete $hash->{helper}{'.delayed'}{$identiy};
-    deleteSingleRegisteredInternalTimer($identiy, $hash);
+    deleteSingleRegIntTimer($identiy, $hash);
     
     #my $data_old = $hash->{helper}{'.delayed'};
     #my $data_old = $data->{customData} // $data_saved;
@@ -3783,7 +3845,7 @@ sub handleIntentChoiceRoom {
     my $identiy = qq($data->{sessionId});
     my $data_old = $hash->{helper}{'.delayed'}->{$identiy};
     delete $hash->{helper}{'.delayed'}{$identiy};
-    deleteSingleRegisteredInternalTimer($identiy, $hash);
+    deleteSingleRegIntTimer($identiy, $hash);
 
     return respond( $hash, $data->{requestType}, $data->{sessionId}, $data->{siteId}, getResponse( $hash, 'DefaultChoiceNoOutstanding' ) ) if !defined $data_old;
 
@@ -3813,7 +3875,7 @@ sub handleIntentChoiceDevice {
     my $identiy = qq($data->{sessionId});
     my $data_old = $hash->{helper}{'.delayed'}->{$identiy};
     delete $hash->{helper}{'.delayed'}{$identiy};
-    deleteSingleRegisteredInternalTimer($identiy, $hash);
+    deleteSingleRegIntTimer($identiy, $hash);
 
     return respond( $hash, $data->{requestType}, $data->{sessionId}, $data->{siteId}, getResponse( $hash, 'DefaultChoiceNoOutstanding' ) ) if ! defined $data_old;
 
@@ -3992,67 +4054,6 @@ sub _getDialogueTimeout {
         && looks_like_number( $hash->{helper}{tweaks}{timeouts}->{$type} );
     return $timeout;
 }
-
-
-# borrowed from Twilight
-################################################################################
-################################################################################
-sub resetRegisteredInternalTimer {
-    my ( $modifier, $tim, $callback, $hash, $waitIfInitNotDone ) = @_;
-    deleteSingleRegisteredInternalTimer( $modifier, $hash, $callback );
-    return setRegisteredInternalTimer ( $modifier, $tim, $callback, $hash, $waitIfInitNotDone );
-}
-
-################################################################################
-sub setRegisteredInternalTimer {
-    my ( $modifier, $tim, $callback, $hash, $waitIfInitNotDone ) = @_;
-
-    my $timerName = "$hash->{NAME}_$modifier";
-    my $fnHash     = {
-        HASH     => $hash,
-        NAME     => $timerName,
-        MODIFIER => $modifier
-    };
-    weaken($fnHash->{HASH});
-
-    if ( defined( $hash->{TIMER}{$timerName} ) ) {
-        Log3( $hash, 1, "[$hash->{NAME}] possible overwriting of timer $timerName - please delete it first" );
-        stacktrace();
-    }
-    else {
-        $hash->{TIMER}{$timerName} = $fnHash;
-    }
-
-    Log3( $hash, 5, "[$hash->{NAME}] setting  Timer: $timerName " . FmtDateTime($tim) );
-    InternalTimer( $tim, $callback, $fnHash, $waitIfInitNotDone );
-    return $fnHash;
-}
-
-################################################################################
-sub deleteSingleRegisteredInternalTimer {
-    my $modifier = shift;
-    my $hash = shift // return;
-
-    my $timerName = "$hash->{NAME}_$modifier";
-    my $fnHash    = $hash->{TIMER}{$timerName};
-    if ( defined($fnHash) ) {
-        Log3( $hash, 5, "[$hash->{NAME}] removing Timer: $timerName" );
-        RemoveInternalTimer($fnHash);
-        delete $hash->{TIMER}{$timerName};
-    }
-    return;
-}
-
-################################################################################
-sub deleteAllRegisteredInternalTimer {
-    my $hash = shift // return;
-
-    for my $key ( keys %{ $hash->{TIMER} } ) {
-        deleteSingleRegisteredInternalTimer( $hash->{TIMER}{$key}{MODIFIER}, $hash );
-    }
-    return;
-}
-
 
 
 1;
@@ -4375,37 +4376,14 @@ i="i am hungry" f="set Stove on" d="Stove" c="would you like roast pork"</code><
 
 <p>&nbsp;</p>
 <a id="RHASSPY-attr-subdevice"></a>
-<p><b>For the subordinated devices</b>, a list of the possible attributes is automatically extended by several further entries.</p>
-<p>There are two ways to tell RHASSPY which devices it should control:</p>
-<ul>
-  <li><a href="#RHASSPY-genericDeviceType">genericDeviceType</a> (gDT)</li>
-  <li><a href="#RHASSPY-rhasspySpecificAttributes">RHASSPY specific attributes</a></li>
-</ul>
-<p>It's also possible to mix these two options if one of it isn't enough.</p>
-
-<a id="RHASSPY-genericDeviceType"></a><p><b>genericDeviceType</b></p>
-<p>If this attribute is set, RHASSPY will try to determine mapping (and other) information from the attributes already present (if devices match devspec). Currently the following subset of genericDeviceType is supported:</p>
-<ul>
-  <li>switch</li>
-  <li>light</li>
-  <li>thermostat</li>
-  <li>thermometer</li>
-  <li>blind</li>
-  <li>media</li>
-</ul>
-<p>When using genericDeviceType, collected information about the device are for example:</p>
-<ul>
-  <li>the name (NAME or alias)</li>
-  <li>the ROOM or GROUP the device is in</li>
-  <li>how to GET information from the device</li>
-  <li>how to SET state/values</li>
-</ul>
-<p>This is the easiest way to get devices to work with RHASSPY. In some cases it may happen that gDT delivers to less or not suitable information for this particular device. Then it's possible to overwrite this with the following RHASSPY specific device attributes.</p>
-<a href="#RHASSPY-rhasspySpecificAttributes"></a><p><b>RHASSPY specific attributes</b></p>
-<p>The names of these attributes all start with the <i>prefix</i> previously defined in RHASSPY<br>
+<p><b>For the subordinated devices</b>, a list of the possible attributes is automatically extended by several further entries</p>
+<p>The names of these attributes all start with the <i>prefix</i> previously defined in RHASSPY - except for <a href="#RHASSPY-genericDeviceType">genericDeviceType</a> (gDT).<br>
 These attributes are used to configure the actual mapping to the intents and the content sent by Rhasspy.</p>
+<p>Note: As the analyses of the gDT is intented to lead to fast configuration progress, it's highly recommended to use this as a starting point. All other RHASSPY-specific attributes will then be considered as a user command to <b>overwrite</b> the results provided by the automatics initiated by gDT usage.</p>
+    
 <p>By default, the following attribute names are used: rhasspyName, rhasspyRoom, rhasspyGroup, rhasspyChannels, rhasspyColors, rhasspySpecials.<br>
 Each of the keywords found in these attributes will be sent by <a href="#RHASSPY-set-update">update</a> to Rhasspy to create the corresponding slot.</p>
+
 <ul>
   <li>
     <a id="RHASSPY-attr-rhasspyName"></a><b>rhasspyName</b>
@@ -4486,7 +4464,7 @@ yellow=rgb FFFF00</code></p>
         <p>If set, the slat target position will be set to the same level than the main device.</p>
       </li>
       <li><b>colorCommandMap</b>
-        <p>Allows mapping of values from the <i>Color</i> key to individual commands.</p>
+        <p>Allows mapping of values from the <i>Color></i> key to individual commands.</p>
         <p>Example:</p>
         <p><code>attr lamp1 rhasspySpecials colorCommandMap:0='rgb FF0000' 120='rgb 00FF00' 240='rgb 0000FF'</code></p>
       </li>
