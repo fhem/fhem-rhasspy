@@ -568,7 +568,7 @@ Intent to switch devices for an defined amout of time.
 Device need to have a [SetOnOff-Mapping](#setonoff) set. And they have to support [SetExtentions](https://commandref.fhem.de/commandref.html#setExtensions).
 
 Example-Sentences:
-  > turn off the light for one minute and thirty seconds
+  > turn off the light for one minute and thirty seconds\
   > turn on the music in the bathroom until two o'clock
   
 Example-Rhasspy-Sentences:
@@ -617,7 +617,7 @@ Intent to switch a group of devices for an defined amount of time.
 SetOnOffGroup-Mapping needed and all devices in this group have to support [SetExtentions](https://commandref.fhem.de/commandref.html#setExtensions).
 
 Example-Sentence:
-  > turn off all lights in the kitchen for fifty seconds
+  > turn off all lights in the kitchen for fifty seconds\
   > turn on all lights until two o'clock
 
 Example-Rhasspy-Sentences:
