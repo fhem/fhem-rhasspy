@@ -90,7 +90,7 @@ It's possible to use the `update` command of FHEM to install or update RHASSPY. 
 
 After that you can use the command\
 ```update all https://raw.githubusercontent.com/fhem/fhem-rhasspy/main/controls_fhem-rhasspy.txt```\
-to install 10_RHASSPY.pm
+to install or update 10_RHASSPY.pm
 
 For more information see [CommandRef](https://fhem.de/commandref.html#update) or [FHEM-Wiki](https://wiki.fhem.de/wiki/Update).
 
