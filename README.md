@@ -85,17 +85,17 @@ There are three possible ways to install this module. In **every** case you have
 - Don't forget to change the ownership of the file to `fhem:dialout` (or whatever user/group FHEM is using)
 
 ### FHEM Update and Git
-It's possible to use the `update` command of FHEM to install or update RHASSPY. To do so, add the moduls control file in this repository to the update list:
+It's possible to use the `update` command of FHEM to install or update RHASSPY. To do so, add the moduls control file in this repository to the update list:\
 ```update add https://raw.githubusercontent.com/fhem/fhem-rhasspy/main/controls_fhem-rhasspy.txt```
 
-After that you can use the command
-```update all https://raw.githubusercontent.com/fhem/fhem-rhasspy/main/controls_fhem-rhasspy.txt```
+After that you can use the command\
+```update all https://raw.githubusercontent.com/fhem/fhem-rhasspy/main/controls_fhem-rhasspy.txt```\
 to install 10_RHASSPY.pm
 
 For more information see [CommandRef](https://fhem.de/commandref.html#update) or [FHEM-Wiki](https://wiki.fhem.de/wiki/Update).
 
 ### FHEM SVN
-You can also get the required files directly from the FHEM SVN with typing the following command into FHEM's command-line:
+You can also get the required files directly from the FHEM SVN with typing the following command into FHEM's command-line:\
 ```{ Svn_GetFile('contrib/RHASSPY/10_RHASSPY.pm', 'FHEM/10_RHASSPY.pm') }```
 
 For more information see [FHEM-Wiki](https://wiki.fhem.de/wiki/Update#Einzelne_Dateien_aus_dem_SVN_holen).
