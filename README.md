@@ -23,7 +23,9 @@
 &nbsp;&nbsp;&nbsp;&nbsp;[Attribute *rhasspySpecials*](#attribute-rhasspyspecials)\
 [Intents](#intents)\
 &nbsp;&nbsp;&nbsp;&nbsp;[SetOnOff](#setonoff)\
+&nbsp;&nbsp;&nbsp;&nbsp;[SetTimedOnOff](#settimedonoff)\
 &nbsp;&nbsp;&nbsp;&nbsp;[SetOnOffGroup](#setonoffgroup)\
+&nbsp;&nbsp;&nbsp;&nbsp;[SetTimedOnOffGroup](#settimedonoffgroup)\
 &nbsp;&nbsp;&nbsp;&nbsp;[GetOnOff](#getonoff)\
 &nbsp;&nbsp;&nbsp;&nbsp;[SetNumeric](#setnumeric)\
 &nbsp;&nbsp;&nbsp;&nbsp;[SetNumericGroup](#setnumericgroup)\
@@ -560,6 +562,31 @@ Required tags:
 Optional tags:
 * Room
 
+### SetTimedOnOff
+Intent to switch devices for an defined amout of time.
+
+Device need to have a [SetOnOff-Mapping](#setonoff) set. And they have to support [SetExtentions](https://commandref.fhem.de/commandref.html#setExtensions).
+
+Example-Sentences:
+  > turn off the light for one minute and thirty seconds
+  > turn on the music in the bathroom until two o'clock
+  
+Example-Rhasspy-Sentences:
+```
+[en.fhem:SetTimedOnOff]
+turn (on|off){Value} $en.fhem.Device{Device} [$en.fhem.Room{Room}] for ([(1..60){Hour!int} (hour|hours)] [and] [(1..60){Min!int} (minute|minutes)] [and] [(1..60){Sec!int} (second|seconds)]) 
+turn (on|off){Value} $en.fhem.Device{Device} [$en.fhem.Room{Room}] until (0..24){Hourabs!int} [(1..60){Min!int}]
+```
+
+Required tags:
+* Value
+* Device
+* Hour or Min or Sec
+
+Optional tags:
+* Room
+
+
 ### SetOnOffGroup
 Intent to switch a group of devices.
 
@@ -583,7 +610,31 @@ Required tags:
 
 Optional tags:
 * Room
- 
+
+### SetTimedOnOffGroup
+Intent to switch a group of devices for an defined amount of time.
+
+SetOnOffGroup-Mapping needed and all devices in this group have to support [SetExtentions](https://commandref.fhem.de/commandref.html#setExtensions).
+
+Example-Sentence:
+  > turn off all lights in the kitchen for fifty seconds
+  > turn on all lights until two o'clock
+
+Example-Rhasspy-Sentences:
+```
+[en.fhem:SetTimedOnOff]
+turn (on|off){Value} $en.fhem.Group{Group} [$en.fhem.Room{Room}] for ([(1..60){Hour!int} (hour|hours)] [and] [(1..60){Min!int} (minute|minutes)] [and] [(1..60){Sec!int} (second|seconds)]) 
+turn (on|off){Value} $en.fhem.Group{Group} [$en.fhem.Room{Room}] until (0..24){Hourabs!int} [(1..60){Min!int}]
+```
+
+Required tags:
+* Value
+* Group
+* Hour or Min or Sec
+
+Optional tags:
+* Room
+
 ### GetOnOff
 Intent to request the current state of a device.
 
