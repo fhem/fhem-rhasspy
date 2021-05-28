@@ -7,7 +7,11 @@
 [About FHEM-rhasspy](#About-FHEM-rhasspy)\
 [About this repository](#about-this-repository)\
 [Installation of FHEM-rhasspy](#Installation-of-FHEM-rhasspy)\
-[Additionals remarks on MQTT2-IOs](#additionals-remarks-on-mqtt2-ios)\
+&nbsp;&nbsp;&nbsp;&nbsp;[Manual Installation](#manual-installation)\
+&nbsp;&nbsp;&nbsp;&nbsp;[FHEM Update and Git](#fhem-update-and-git)\
+&nbsp;&nbsp;&nbsp;&nbsp;[FHEM SVN](#fhem-svn)\
+&nbsp;&nbsp;&nbsp;&nbsp;[MQTT2_CLIENT Device](#mqtt2_client-device)\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Additionals remarks on MQTT2-IOs](#additionals-remarks-on-mqtt2-ios)\
 [Definition (DEF) in FHEM](#definition-def-in-fhem)\
 &nbsp;&nbsp;&nbsp;&nbsp;[Set-Commands (SET)](#set-commands-set)\
 &nbsp;&nbsp;&nbsp;&nbsp;[Attributes (ATTR)](#attributes-attr)\
@@ -73,9 +77,30 @@ fhem-rhasspy is based on the [Snips-Module](https://github.com/Thyraz/Snips-Fhem
 This repository contains all files to set up a complete installation to test Rhasspy and FHEM with Docker under Windows using the Windows Subsystem for Linux (WSL).
 
 ## Installation of FHEM-rhasspy
-- Update FHEM
-- Download a RAW-Copy of 10_RHASSPY.pm and copy it to your FHEM directory (in most cases `opt/fhem/FHEM`)
+Be sure to use an up-to-date version of FHEM, because some of the features require actual FHEM-components to work. So update FHEM before installing FHEM-rhasspy.\
+There are three possible ways to install this module. In **every** case you have to define an MQTT2_CLIENT device to use with FHEM-rhasspy after the module-installation.
+
+### Manual Installation
+- Download a RAW-Copy of [10_RHASSPY.pm](https://raw.githubusercontent.com/fhem/fhem-rhasspy/main/FHEM/10_RHASSPY.pm) and copy it to your FHEM directory (in most cases `opt/fhem/FHEM`)
 - Don't forget to change the ownership of the file to `fhem:dialout` (or whatever user/group FHEM is using)
+
+### FHEM Update and Git
+It's possible to use the `update` command of FHEM to install or update RHASSPY. To do so, add the moduls control file in this repository to the update list:
+```update add https://raw.githubusercontent.com/fhem/fhem-rhasspy/main/controls_fhem-rhasspy.txt```
+
+After that you can use the command
+```update all https://raw.githubusercontent.com/fhem/fhem-rhasspy/main/controls_fhem-rhasspy.txt```
+to install 10_RHASSPY.pm
+
+For more information see [CommandRef](https://fhem.de/commandref.html#update) or [FHEM-Wiki](https://wiki.fhem.de/wiki/Update).
+
+### FHEM SVN
+You can also get the required files directly from the FHEM SVN with typing the following command into FHEM's command-line:
+```{ Svn_GetFile('contrib/RHASSPY/10_RHASSPY.pm', 'FHEM/10_RHASSPY.pm') }```
+
+For more information see [FHEM-Wiki](https://wiki.fhem.de/wiki/Update#Einzelne_Dateien_aus_dem_SVN_holen).
+
+### MQTT2_CLIENT Device
 - Define a MQTT2_CLIENT device which connects to the MQTT-server Rhasspy is using. E.g.:
 ```
 define <deviceName> MQTT2_CLIENT <ip-or-hostname-of-mqtt-server>:<port> 
@@ -91,7 +116,7 @@ attr <deviceName> subscriptions hermes/intent/+ hermes/dialogueManager/sessionSt
 
 **Important**: The attribute `clientOrder` ist not available in older version of MQTT2_CLIENT. Be sure to use an up-to-date version of this module.
 
-## Additionals remarks on MQTT2-IOs
+#### Additionals remarks on MQTT2-IOs
 Using a separate MQTT server (and not the internal MQTT2_SERVER) is highly recommended, as the Rhasspy scripts also use the MQTT protocol for internal (sound!) data transfers. Best way is to either use MQTT2_CLIENT (see below) or bridge only the relevant topics from mosquitto to MQTT2_SERVER (see e.g. http://www.steves-internet-guide.com/mosquitto-bridge-configuration/ for the principles). When using MQTT2_CLIENT, it's necessary to set `clientOrder` to include RHASSPY (as most likely, it's the only module listening to the CLIENT). It could be just set to `attr <m2client> clientOrder RHASSPY`
 
 Furthermore, you are highly encouraged to restrict subscriptions only to the relevant topics: `attr <m2client> subscriptions setByTheProgram`
