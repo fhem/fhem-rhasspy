@@ -543,7 +543,8 @@ All of the following options are optional.
   `attr sensor_outside_main rhasspySpecials priority:inRoom=temperature outsideRoom=temperature,humidity,pressure`
 
 * **scenes**\
-  Used to insert scene-names if using genericDeviceType to switch a LightScene-Device.
+  Used to insert scene-names if using genericDeviceType to switch a LightScene-Device.\
+  If set, the label provided will be sent to Rhasspy instead of the *tech names* (derived from available setters). Keyword *none* will delete the scene from the internal list, setting the combination *all=none* will exclude the entire device from beeing recognized for SetScene.
   
   Example:\
   `attr LightScene rhasspySpecials scenes: scene1="Sleeping" scene2="watch TV" scene3=none scene4=none`
