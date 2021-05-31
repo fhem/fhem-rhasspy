@@ -1019,19 +1019,19 @@ Example-Rhasspy-Sentences:
 
 ### GetWeekDay
 
-Intent to let Rhasspy speak the actual day
+Intent to let Rhasspy speak the actual date
 
 No FHEM-settings needed.
 
 Example-Sentences:
 ```
-which weekday is today
+which day is today
 ```
 
 Example-Rhasspy-Sentences:
 ```
 [en.fhem:GetWeekday]
-which weekday is today
+which day is today
 ```
 
 ### SetTimer
