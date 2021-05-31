@@ -345,7 +345,7 @@ sub Define {
 
     $hash->{defaultRoom} = $defaultRoom;
     my $language = $h->{language} // shift @{$anon} // lc AttrVal('global','language','en');
-    $hash->{MODULE_VERSION} = '0.4.18';
+    $hash->{MODULE_VERSION} = '0.4.19';
     $hash->{baseUrl} = $Rhasspy;
     initialize_Language($hash, $language) if !defined $hash->{LANGUAGE} || $hash->{LANGUAGE} ne $language;
     $hash->{LANGUAGE} = $language;
@@ -1145,8 +1145,11 @@ sub _analyze_genDevType_setter {
         for my $scname (split m{,}xms, $+{scnames}) {
             my $clscene = $scname;
             # cleanup HUE scenes
-            $clscene = (split m{[#]\[id}xms, $clscene)[0] if $clscene =~ m{#\[id}xms; 
-            $clscene =~ s{[#]}{ }gxm;
+            if ($clscene =~ m{[#]\[id}xms) {
+                $clscene = (split m{[#]\[id}xms, $clscene)[0] if $clscene =~ m{[#]\[id}xms; 
+                $clscene =~ s{[#]}{ }gxm;
+                $scname =~ s{.*[#]\[(id=.+)]}{$1}xms;
+            }
             $mapping->{SetScene}->{SetScene}->{$scname} = $clscene;
         }
     }
@@ -3392,6 +3395,18 @@ sub handleIntentSetScene{
         $scene = $data->{Scene};
         $device = getDeviceByName($hash, $room, $data->{Device});
         $mapping = getMapping($hash, $device, 'SetScene', undef, defined $hash->{helper}{devicemap});
+        # restore HUE scenes
+        if ($scene =~ m{id=.+}xms) {
+            my $allset = getAllSets($device);
+            if ($allset =~ m{\bscene:(?<scnames>[\S]+)}xm) {
+                for my $scname (split m{,}xms, $+{scnames}) {
+                    if ($scname =~ m{$scene}xms) {
+                        $scene = $scname;
+                        last $scname;
+                    }
+                }
+            }
+        }
 
         # Mapping found?
         return respond ($hash, $data->{requestType}, $data->{sessionId}, $data->{siteId}, getResponse($hash, 'NoValidData')) if !$device || !defined $mapping;
