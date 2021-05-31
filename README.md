@@ -549,7 +549,8 @@ All of the following options are optional.
   `attr LightScene rhasspySpecials scenes: scene1="Sleeping" scene2="watch TV" scene3=none scene4=none`
 
 ## Intents
-Intents are used to tell FHEM what to do after receiving a voice-/text-command. This module has some build-in intents.
+Intents are used to tell FHEM what to do after receiving a voice-/text-command. This module has some build-in intents.\
+**Important**: Regarding tags (*Value*, *Room*, *Device*, etc.), their notation is very important! They are case-sensitive. So please be sure to write them, as they are written in this documentation.
 
 ### SetOnOff
 Intent to turn on/off, open/close, start/stop, ... devices.
