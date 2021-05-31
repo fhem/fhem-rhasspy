@@ -109,7 +109,7 @@ my $languagevars = {
     },
     'timerCancellation' => '$label for $room deleted',
     'timeRequest' => 'it is $hour o clock $min minutes',
-    'weekdayRequest' => 'today it is $weekDay',
+    'weekdayRequest' => 'today is $weekDay, $month the $day., $year',
     'duration_not_understood'   => "Sorry I could not understand the desired duration",
     'reSpeak_failed'   => 'i am sorry i can not remember',
     'Change' => {
@@ -345,7 +345,7 @@ sub Define {
 
     $hash->{defaultRoom} = $defaultRoom;
     my $language = $h->{language} // shift @{$anon} // lc AttrVal('global','language','en');
-    $hash->{MODULE_VERSION} = '0.4.17';
+    $hash->{MODULE_VERSION} = '0.4.18';
     $hash->{baseUrl} = $Rhasspy;
     initialize_Language($hash, $language) if !defined $hash->{LANGUAGE} || $hash->{LANGUAGE} ne $language;
     $hash->{LANGUAGE} = $language;
@@ -940,7 +940,7 @@ sub _analyze_rhassypAttr {
             my($unnamed, $named) = parseParams($val);
             my $combined = _combineHashes( $hash->{helper}{devicemap}{devices}{$device}{intents}{SetScene}->{SetScene}, $named);
             for (keys %{$combined}) {
-                delete $combined->{$_} if $combined->{$_} eq 'none';
+                delete $combined->{$_} if $combined->{$_} eq 'none' || $named->{all} eq 'none';
             }
             keys %{$combined} ?
                 $hash->{helper}{devicemap}{devices}{$device}{intents}{SetScene}->{SetScene} = $combined
@@ -1143,7 +1143,11 @@ sub _analyze_genDevType_setter {
 
     if ($setter =~ m{\bscene:(?<scnames>[\S]+)}xm) {
         for my $scname (split m{,}xms, $+{scnames}) {
-            $mapping->{SetScene}->{SetScene}->{$scname} = $scname;
+            my $clscene = $scname;
+            # cleanup HUE scenes
+            $clscene = (split m{[#]\[id}xms, $clscene)[0] if $clscene =~ m{#\[id}xms; 
+            $clscene =~ s{[#]}{ }gxm;
+            $mapping->{SetScene}->{SetScene}->{$scname} = $clscene;
         }
     }
     return $mapping;
@@ -1709,10 +1713,10 @@ sub getDevicesByGroup {
 
     for my $dev (keys %{$hash->{helper}{devicemap}{devices}}) {
         my $allrooms = $hash->{helper}{devicemap}{devices}{$dev}->{rooms};
-        next if $room ne 'global' && $allrooms !~ m{\b$room\b}x;
+        next if $room ne 'global' && $allrooms !~ m{\b$room(?:[\b:\s]|\Z)}x;
 
         my $allgroups = $hash->{helper}{devicemap}{devices}{$dev}->{groups} // next;
-        next if $allgroups !~ m{\b$group\b}x;
+        next if $allgroups !~ m{\b$group(?:[\b:\s]|\Z)}x;
 
         my $specials = $hash->{helper}{devicemap}{devices}{$dev}{group_specials};
         my $label = $specials->{partOf} // $dev;
@@ -3431,9 +3435,14 @@ sub handleIntentGetWeekday {
     Log3($hash->{NAME}, 5, "handleIntentGetWeekday called");
 
     my $weekDay  = strftime( '%A', localtime );
+    $weekDay  = $hash->{helper}{lng}{words}->{$weekDay} if defined $hash->{helper}{lng}{words}->{$weekDay};
+    my $month = strftime( '%B', localtime );
+    $month  = $hash->{helper}{lng}{words}->{$month} if defined $hash->{helper}{lng}{words}->{$month};
+    my $year = strftime( '%G', localtime );
+    my $day = strftime( '%e', localtime );
     my $response = $hash->{helper}{lng}->{responses}->{weekdayRequest};
     $response =~ s{(\$\w+)}{$1}eegx;
-    
+
     Log3($hash->{NAME}, 5, "Response: $response");
 
     # Send voice reponse
@@ -4150,7 +4159,7 @@ __END__
 # "rhasspySpecials" bzw. rhasspyTweaks als weitere Attribute
 Denkbare Verwendung:
 - siteId2room für mobile Geräte (Denkbare Anwendungsfälle: Auswertung BT-RSSI per Perl, aktives Setzen über ein Reading? Oder einen intent? (tweak)
-- Bestätigungs-Mapping (special)
+- Bestätigungs-Mapping (special) (ist noch offen)
 
 # Sonstiges, siehe insbes. https://forum.fhem.de/index.php/topic,119447.msg1148832.html#msg1148832
 - kein "match in room" bei GetNumeric
@@ -4163,7 +4172,9 @@ Denkbare Verwendung:
 
 # Parameter-Check für define? Anregung DrBasch aus https://forum.fhem.de/index.php/topic,119447.msg1157700.html#msg1157700
 
-# Keine shortcuts-Intents, wenn Attribut nicht gesetzt: Anregung DrBasch aus https://forum.fhem.de/index.php/topic,119447.msg1157700.html#msg1157700
+# Keine shortcuts-Intents, wenn Attribut nicht gesetzt: Anregung DrBasch aus https://forum.fhem.de/index.php/topic,119447.msg1157700.html#msg1157700 (erl.)
+
+# Doku zu den "üblichen Formaten" (z.B. JSON-Keywords beginnen mit Großbuchstaben)?
 
 =end ToDo
 
@@ -4551,6 +4562,12 @@ yellow=rgb FFFF00</code></p>
         <p>Example:</p>
         <p><code>attr sensor_outside_main rhasspySpecials priority:inRoom=temperature outsideRoom=temperature,humidity,pressure</code></p>
       </li>
+      <li><b>scenes</b>
+        <p><code>attr lamp1 rhasspySpecials scenes:scene2="Kino zu zweit" scene3=Musik scene1=none scene4=none</code></p>
+        <p>Explanation:
+        <p>If set, the label provided will be sent to Rhasspy instead of the <i>tech names</i> (derived from available setters). Keyword <i>none</i> will delete the scene from the internal list, setting the combination <i>all=none</i> will exclude the entire device from beeing recognized for SetScene.</p>
+      </li>
+
     </ul>
   </li>
 </ul>
