@@ -7,7 +7,11 @@
 [About FHEM-rhasspy](#About-FHEM-rhasspy)\
 [About this repository](#about-this-repository)\
 [Installation of FHEM-rhasspy](#Installation-of-FHEM-rhasspy)\
-[Additionals remarks on MQTT2-IOs](#additionals-remarks-on-mqtt2-ios)\
+&nbsp;&nbsp;&nbsp;&nbsp;[Manual Installation](#manual-installation)\
+&nbsp;&nbsp;&nbsp;&nbsp;[FHEM Update and Git](#fhem-update-and-git)\
+&nbsp;&nbsp;&nbsp;&nbsp;[FHEM SVN](#fhem-svn)\
+&nbsp;&nbsp;&nbsp;&nbsp;[MQTT2_CLIENT Device](#mqtt2_client-device)\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Additionals remarks on MQTT2-IOs](#additionals-remarks-on-mqtt2-ios)\
 [Definition (DEF) in FHEM](#definition-def-in-fhem)\
 &nbsp;&nbsp;&nbsp;&nbsp;[Set-Commands (SET)](#set-commands-set)\
 &nbsp;&nbsp;&nbsp;&nbsp;[Attributes (ATTR)](#attributes-attr)\
@@ -23,7 +27,9 @@
 &nbsp;&nbsp;&nbsp;&nbsp;[Attribute *rhasspySpecials*](#attribute-rhasspyspecials)\
 [Intents](#intents)\
 &nbsp;&nbsp;&nbsp;&nbsp;[SetOnOff](#setonoff)\
+&nbsp;&nbsp;&nbsp;&nbsp;[SetTimedOnOff](#settimedonoff)\
 &nbsp;&nbsp;&nbsp;&nbsp;[SetOnOffGroup](#setonoffgroup)\
+&nbsp;&nbsp;&nbsp;&nbsp;[SetTimedOnOffGroup](#settimedonoffgroup)\
 &nbsp;&nbsp;&nbsp;&nbsp;[GetOnOff](#getonoff)\
 &nbsp;&nbsp;&nbsp;&nbsp;[SetNumeric](#setnumeric)\
 &nbsp;&nbsp;&nbsp;&nbsp;[SetNumericGroup](#setnumericgroup)\
@@ -71,9 +77,30 @@ fhem-rhasspy is based on the [Snips-Module](https://github.com/Thyraz/Snips-Fhem
 This repository contains all files to set up a complete installation to test Rhasspy and FHEM with Docker under Windows using the Windows Subsystem for Linux (WSL).
 
 ## Installation of FHEM-rhasspy
-- Update FHEM
-- Download a RAW-Copy of 10_RHASSPY.pm and copy it to your FHEM directory (in most cases `opt/fhem/FHEM`)
+Be sure to use an up-to-date version of FHEM, because some of the features require actual FHEM-components to work. So update FHEM before installing FHEM-rhasspy.\
+There are three possible ways to install this module. In **every** case you have to define an MQTT2_CLIENT device to use with FHEM-rhasspy after the module-installation.
+
+### Manual Installation
+- Download a RAW-Copy of [10_RHASSPY.pm](https://raw.githubusercontent.com/fhem/fhem-rhasspy/main/FHEM/10_RHASSPY.pm) and copy it to your FHEM directory (in most cases `opt/fhem/FHEM`)
 - Don't forget to change the ownership of the file to `fhem:dialout` (or whatever user/group FHEM is using)
+
+### FHEM Update and Git
+It's possible to use the `update` command of FHEM to install or update RHASSPY. To do so, add the moduls control file in this repository to the update list:\
+```update add https://raw.githubusercontent.com/fhem/fhem-rhasspy/main/controls_fhem-rhasspy.txt```
+
+After that you can use the command\
+```update all https://raw.githubusercontent.com/fhem/fhem-rhasspy/main/controls_fhem-rhasspy.txt```\
+to install or update 10_RHASSPY.pm
+
+For more information see [CommandRef](https://fhem.de/commandref.html#update) or [FHEM-Wiki](https://wiki.fhem.de/wiki/Update).
+
+### FHEM SVN
+You can also get the required files directly from the FHEM SVN with typing the following command into FHEM's command-line:\
+```{ Svn_GetFile('contrib/RHASSPY/10_RHASSPY.pm', 'FHEM/10_RHASSPY.pm') }```
+
+For more information see [FHEM-Wiki](https://wiki.fhem.de/wiki/Update#Einzelne_Dateien_aus_dem_SVN_holen).
+
+### MQTT2_CLIENT Device
 - Define a MQTT2_CLIENT device which connects to the MQTT-server Rhasspy is using. E.g.:
 ```
 define <deviceName> MQTT2_CLIENT <ip-or-hostname-of-mqtt-server>:<port> 
@@ -89,7 +116,7 @@ attr <deviceName> subscriptions hermes/intent/+ hermes/dialogueManager/sessionSt
 
 **Important**: The attribute `clientOrder` ist not available in older version of MQTT2_CLIENT. Be sure to use an up-to-date version of this module.
 
-## Additionals remarks on MQTT2-IOs
+#### Additionals remarks on MQTT2-IOs
 Using a separate MQTT server (and not the internal MQTT2_SERVER) is highly recommended, as the Rhasspy scripts also use the MQTT protocol for internal (sound!) data transfers. Best way is to either use MQTT2_CLIENT (see below) or bridge only the relevant topics from mosquitto to MQTT2_SERVER (see e.g. http://www.steves-internet-guide.com/mosquitto-bridge-configuration/ for the principles). When using MQTT2_CLIENT, it's necessary to set `clientOrder` to include RHASSPY (as most likely, it's the only module listening to the CLIENT). It could be just set to `attr <m2client> clientOrder RHASSPY`
 
 Furthermore, you are highly encouraged to restrict subscriptions only to the relevant topics: `attr <m2client> subscriptions setByTheProgram`
@@ -516,13 +543,15 @@ All of the following options are optional.
   `attr sensor_outside_main rhasspySpecials priority:inRoom=temperature outsideRoom=temperature,humidity,pressure`
 
 * **scenes**\
-  Used to insert scene-names if using genericDeviceType to switch a LightScene-Device.
+  Used to insert scene-names if using genericDeviceType to switch a LightScene-Device.\
+  If set, the label provided will be sent to Rhasspy instead of the *tech names* (derived from available setters). Keyword *none* will delete the scene from the internal list, setting the combination *all=none* will exclude the entire device from beeing recognized for SetScene.
   
   Example:\
   `attr LightScene rhasspySpecials scenes: scene1="Sleeping" scene2="watch TV" scene3=none scene4=none`
 
 ## Intents
-Intents are used to tell FHEM what to do after receiving a voice-/text-command. This module has some build-in intents.
+Intents are used to tell FHEM what to do after receiving a voice-/text-command. This module has some build-in intents.\
+**Important**: Regarding tags (*Value*, *Room*, *Device*, etc.), their notation is very important! They are case-sensitive. So please be sure to write them, as they are written in this documentation.
 
 ### SetOnOff
 Intent to turn on/off, open/close, start/stop, ... devices.
@@ -560,6 +589,31 @@ Required tags:
 Optional tags:
 * Room
 
+### SetTimedOnOff
+Intent to switch devices for an defined amout of time.
+
+Device need to have a [SetOnOff-Mapping](#setonoff) set. And they have to support [SetExtentions](https://commandref.fhem.de/commandref.html#setExtensions).
+
+Example-Sentences:
+  > turn off the light for one minute and thirty seconds\
+  > turn on the music in the bathroom until two o'clock
+  
+Example-Rhasspy-Sentences:
+```
+[en.fhem:SetTimedOnOff]
+turn (on|off){Value} $en.fhem.Device{Device} [$en.fhem.Room{Room}] for ([(1..60){Hour!int} (hour|hours)] [and] [(1..60){Min!int} (minute|minutes)] [and] [(1..60){Sec!int} (second|seconds)]) 
+turn (on|off){Value} $en.fhem.Device{Device} [$en.fhem.Room{Room}] until (0..24){Hourabs!int} [(1..60){Min!int}]
+```
+
+Required tags:
+* Value
+* Device
+* Hour or Min or Sec
+
+Optional tags:
+* Room
+
+
 ### SetOnOffGroup
 Intent to switch a group of devices.
 
@@ -583,7 +637,31 @@ Required tags:
 
 Optional tags:
 * Room
- 
+
+### SetTimedOnOffGroup
+Intent to switch a group of devices for an defined amount of time.
+
+SetOnOffGroup-Mapping needed and all devices in this group have to support [SetExtentions](https://commandref.fhem.de/commandref.html#setExtensions).
+
+Example-Sentence:
+  > turn off all lights in the kitchen for fifty seconds\
+  > turn on all lights until two o'clock
+
+Example-Rhasspy-Sentences:
+```
+[en.fhem:SetTimedOnOff]
+turn (on|off){Value} $en.fhem.Group{Group} [$en.fhem.Room{Room}] for ([(1..60){Hour!int} (hour|hours)] [and] [(1..60){Min!int} (minute|minutes)] [and] [(1..60){Sec!int} (second|seconds)]) 
+turn (on|off){Value} $en.fhem.Group{Group} [$en.fhem.Room{Room}] until (0..24){Hourabs!int} [(1..60){Min!int}]
+```
+
+Required tags:
+* Value
+* Group
+* Hour or Min or Sec
+
+Optional tags:
+* Room
+
 ### GetOnOff
 Intent to request the current state of a device.
 
@@ -941,19 +1019,19 @@ Example-Rhasspy-Sentences:
 
 ### GetWeekDay
 
-Intent to let Rhasspy speak the actual day
+Intent to let Rhasspy speak the actual date
 
 No FHEM-settings needed.
 
 Example-Sentences:
 ```
-which weekday is today
+which day is today
 ```
 
 Example-Rhasspy-Sentences:
 ```
 [en.fhem:GetWeekday]
-which weekday is today
+which day is today
 ```
 
 ### SetTimer
