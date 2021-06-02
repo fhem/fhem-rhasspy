@@ -158,12 +158,10 @@ All parameters are optional but changing some of them later may result in confus
   Used to differ between multiple instances of RHASSPY on the FHEM-internal side. Usefull, if you have several instances of RHASSPY in one FHEM running and want e.g. to use different identifier for groups and rooms (e.g. a different language). Default is `prefix=rhasspy`.
 
 * **`useGenericAttrs`**\
-  By default, RHASSPY - beside it's own attributes - uses the general _genericDeviceType_ attribute (which is also used by other voice command solutions) to identifiy the control-features of the devices you want to command. This option adds the attribute `genericDeviceType` to the _global_ attribute list. If you are not happy with the results _genericDeviceType_ provides, you may replace them by setting appropriate values in _rhasspyMapping_. Set this to zero, if you want to deactivate this feature: `useGenericAttrs=0`.
+  By default, RHASSPY - beside it's own attributes - uses the general _genericDeviceType_ attribute (which is also used by other voice command solutions) to identifiy the control-features of the devices you want to command. This option adds the attribute `genericDeviceType` to the _global_ attribute list. If you are not happy with the results _genericDeviceType_ provides, you may replace them by setting appropriate values in _rhasspyMapping_. Setting to zero will deactivate this feature: `useGenericAttrs=0`.
 
 * **`encoding`**\
-  If there are any problems with mutated vowels it's possible to set a specific character encoding. Default is _none_ which in most cases is UTF-8.
-
-
+  If there are any problems with mutated vowels it's possible to set a specific character encoding. Default is _utf8_.
 
 Simple-Example for a define:
 ```
@@ -220,7 +218,7 @@ define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceT
     Example: `set <rhasspyDevice> update devicemap_only`
   * **slots**\
     Sends a command to the HTTP-API of the Rhasspy master to update all slots on Rhasspy with actual FHEM-devices, rooms, etc.\
-    Updated/Created Slots are (excerpt, first two part may vary dependend on the settings in DEF):
+    Updated/Created Slots are (excerpt, first two parts `en.fhem.` correspond to the settings in DEF):
     - en.fhem.AllKeywords
     - en.fhem.Device
     - en.fhem.Device-*genericDeviceType*
@@ -257,8 +255,8 @@ define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceT
   Path to the language-config file.\
   If this attribute isn't set, English is used for voice responses.
   
-  The file itself must contain a JSON-encoded keyword-value structure following the given structure for the mentioned english defaults. As a reference, there is a german language file available. Or it's possible to make a dump of the english structure (with e.g.: `{toJSON($defs{RHASSPY}->{helper}{lng})}`; replace RHASSPY by your device's name). Create a new file and edit this results as desired. There might be some variables to be used - these should also work in your sentences.\
-  languageFile also allows combining a default set of e.g. german sentences with some few own modifications by using "defaults" subtree for the defaults and "user" subtree for your modified versions. This feature might be helpful in case the base language structure has to be changed in the future.
+  The file itself must contain a JSON-encoded keyword-value structure following the given structure for the mentioned English defaults. As a reference, there is a german language file available, also showcasing some advanced features, e.g. values for automatic injection of colour-related slots. Or it's possible to make a dump of the english structure (with e.g.: `{toJSON($defs{RHASSPY}->{helper}{lng})}`; replace *RHASSPY* by your device's name). Create a new file and edit this results as desired (or combine existing german showcase file with your content). There might be some variables to be used - these should also work in your sentences.\
+  *languageFile* also allows combining a default set of e.g. german sentences with some few own modifications by using "defaults" subtree for the defaults and "user" subtree for your modified versions. This feature might be helpful in case the base language structure has to be changed in the future.
   
   Example: `attr <rhasspyDevice> languageFile ./rhasspy-de.cfg`
   
