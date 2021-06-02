@@ -1,1 +1,1 @@
-7cce800 Merge branch 'dev' of https://github.com/fhem/fhem-rhasspy into dev
+9dc03b1 fixed some unitialized warnings
