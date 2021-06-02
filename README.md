@@ -41,7 +41,7 @@
 &nbsp;&nbsp;&nbsp;&nbsp;[SetColorGroup](#setcolorgroup)\
 &nbsp;&nbsp;&nbsp;&nbsp;[SetScene](#setscene)\
 &nbsp;&nbsp;&nbsp;&nbsp;[GetTime](#gettime)\
-&nbsp;&nbsp;&nbsp;&nbsp;[GetWeekDay](#getweekday)\
+&nbsp;&nbsp;&nbsp;&nbsp;[GetDate](#getdate)\
 &nbsp;&nbsp;&nbsp;&nbsp;[SetTimer](#settimer)\
 &nbsp;&nbsp;&nbsp;&nbsp;[SetMute](#setmute)\
 &nbsp;&nbsp;&nbsp;&nbsp;[ReSpeak](#respeak)\
@@ -97,6 +97,8 @@ For more information see [CommandRef](https://fhem.de/commandref.html#update) or
 ### FHEM SVN
 You can also get the required files directly from the FHEM SVN with typing the following command into FHEM's command-line:\
 ```{ Svn_GetFile('contrib/RHASSPY/10_RHASSPY.pm', 'FHEM/10_RHASSPY.pm') }```
+and (if you e.g. want RHASSYP to respond in German):
+```{ Svn_GetFile('contrib/RHASSPY/rhasspy-de.cfg', './rhasspy-de.cfg') }```
 
 For more information see [FHEM-Wiki](https://wiki.fhem.de/wiki/Update#Einzelne_Dateien_aus_dem_SVN_holen).
 
@@ -173,7 +175,7 @@ Full-Example for a define:
 define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceType=.+ defaultRoom=wohnzimmer language=de fhemId=fhem1 prefix=rhasspy2 useGenericAttrs=0 encoding=cp-1252
 ```
 
-**Important**: After defining the module, check if the attribute `IODev` has been set. If not, manually add it with `attr <deviceName> IODev <MQTT2_CLIENT deviceName>`.
+**Important**: After defining the module, it's recommended to set the attribute `IODev`, e.g. by with `attr <deviceName> IODev <MQTT2_CLIENT deviceName>`.
 
 
 ### Set-Commands (SET)
@@ -218,7 +220,7 @@ define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceT
     Example: `set <rhasspyDevice> update devicemap_only`
   * **slots**\
     Sends a command to the HTTP-API of the Rhasspy master to update all slots on Rhasspy with actual FHEM-devices, rooms, etc.\
-    Updated/Created Slots are
+    Updated/Created Slots are (excerpt, first two part may vary dependend on the settings in DEF):
     - en.fhem.AllKeywords
     - en.fhem.Device
     - en.fhem.Device-*genericDeviceType*
@@ -234,7 +236,7 @@ define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceT
     Example: `set <rhasspyDevice> update slots_no_training`
   * **language**\
     Reinitialization of language file.\
-    Be sure to execute this command after changing something in the language-configuration files or the attribute `configFile`!\
+    Be sure to execute this command after changing something in the language-configuration file or the attribute `languageFile`!\
     Example: `set <rhasspyDevice> update language`
   * **all**\
     Update devicemap and language.\
@@ -253,12 +255,15 @@ define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceT
   Example: `attr <rhasspyDevice> IODev rhasspyMQTT2`
 * **languageFile**\
   Path to the language-config file.\
-  If this attribute isn't set, english is used for voice responses.
+  If this attribute isn't set, English is used for voice responses.
   
   The file itself must contain a JSON-encoded keyword-value structure following the given structure for the mentioned english defaults. As a reference, there is a german language file available. Or it's possible to make a dump of the english structure (with e.g.: `{toJSON($defs{RHASSPY}->{helper}{lng})}`; replace RHASSPY by your device's name). Create a new file and edit this results as desired. There might be some variables to be used - these should also work in your sentences.\
-  configFile also allows combining a default set of e.g. german sentences with some few own modifications by using "defaults" subtree for the defaults and "user" subtree for your modified versions. This feature might be helpful in case the base language structure has to be changed in the future.
+  languageFile also allows combining a default set of e.g. german sentences with some few own modifications by using "defaults" subtree for the defaults and "user" subtree for your modified versions. This feature might be helpful in case the base language structure has to be changed in the future.
   
-  Example: `attr <rhasspyDevice> configFile ./.config/rhasspy/rhasspy-de.cfg`
+  Example: `attr <rhasspyDevice> languageFile ./rhasspy-de.cfg`
+  
+  Note: For compability with *configDB*, the *languageFile* reference is indicated as *CONFIGFILE* internal.
+
 * **forceNEXT**\
   If set to 1, RHASSPY will forward incoming messages also to further MQTT2-IO-client modules like MQTT2_DEVICE, even if the topic matches to one of it's own subscriptions. By default, these messages will not be forwarded for better compability with autocreate feature on MQTT2_DEVICE. See also [clientOrder](https://commandref.fhem.de/commandref.html#MQTT2_CLIENT) attribute in MQTT2 IO-type commandrefs. Setting this in one instance of RHASSPY might affect others, too.
 * **response**\
@@ -291,6 +296,7 @@ define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceT
 
   If a simple text is returned, this will be considered as response.\
   For more advanced use of this feature, you may return an array. First element of the array will be interpreted as comma-separated list of devices that may have been modified (otherwise, these devices will not cast any events! See also the "d" parameter in *rhasspyShortcuts*). The second element is interpreted as response and may either be simple text or HASH-type data. This will keep the dialogue-session open to allow interactive data exchange with Rhasspy. An open dialogue will be closed after some time, default is 20 seconds, you may alternatively hand over other numeric values as third element of the array.
+  Note: There are some example myUtils files available in svn/contrib. Check these for further information on how data can be handed over from and to RHASSPY.
 
 * **rhasspyShortcuts**\
   Define custom sentences without editing Rhasspy sentences.ini.\
@@ -422,12 +428,16 @@ attr <device> rhasspyName bulb,leiling light,chandelier
 It's also possible to have the same name for different FHEM-devices. Just make sure they are located in different _rooms_ (e.g. by setting the *rhasspyRoom* attribute).
 
 ### Attribute *rhasspyRoom*
-You can add an attribute `rhasspyRoom` to the device to tell Rhasspy in which physical (or logical) room the device is. If omitted, (alexaRoom or) standard FHEM _room_ attribute is used. If this is also not provided, it belongs to the "default room" as set in _define_\
-This is useful to speak commands without a room. If there is a device *bulb* and it's *rhasspyRoom*-attribute is equal to the siteId of your satellite, it's enough to say "Bulb on" and the bulb in the room the command is spoken will be turned on.
+You can add an attribute `rhasspyRoom` to the device to tell Rhasspy in which physical (or logical) room the device is. If omitted, (_alexaRoom_ or) standard FHEM _room_ attribute is used. If this is also not provided, it belongs to the "default room" as set in _define_\
+This is useful to speak commands without explicitely also naming a room. If there is a device *bulb* and it's *rhasspyRoom*-attribute is equal to the _siteId_ of your satellite, it's enough to say "Bulb on" and the bulb in the room the command is spoken will be turned on.
 `rhasspyRoom` also accepts a comma-separated list.
 
 Example:
 ```attr <device> rhasspyRoom livingroom```
+
+Additional remarks:
+* If siteId follows the grouping conventions in *Rhassy* ( *roomname.sub-satellite*), only *roomname* will be used as room info
+* You may use a special reading following the name convention 'siteId2room_*satellite*' to automatically redirect any siteId to the room indicated by *ReadingVal()* of this reading. See also myUtils example file (ins svn/contrib) for assinging suitable values by RHASSPY using a CustomIntent.
 
 ### Attribute *rhasspyGroup*
 Comma-separated "labels" for the groups the device belongs to.
@@ -608,7 +618,7 @@ turn (on|off){Value} $en.fhem.Device{Device} [$en.fhem.Room{Room}] until (0..24)
 Required tags:
 * Value
 * Device
-* Hour or Min or Sec
+* Hour or Min or Sec or Hourabs
 
 Optional tags:
 * Room
@@ -657,7 +667,7 @@ turn (on|off){Value} $en.fhem.Group{Group} [$en.fhem.Room{Room}] until (0..24){H
 Required tags:
 * Value
 * Group
-* Hour or Min or Sec
+* Hour or Min or Sec or Hourabs
 
 Optional tags:
 * Room
@@ -1017,7 +1027,7 @@ Example-Rhasspy-Sentences:
 (what is|tell me) the time
 ```
 
-### GetWeekDay
+### GetDate
 
 Intent to let Rhasspy speak the actual date
 
@@ -1030,7 +1040,7 @@ which day is today
 
 Example-Rhasspy-Sentences:
 ```
-[en.fhem:GetWeekday]
+[en.fhem:GetDatey]
 which day is today
 ```
 
