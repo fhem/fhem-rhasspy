@@ -11,7 +11,7 @@
 # Thanks to Beta-User, rudolfkoenig, JensS, cb2sela and all the others
 # who did a great job getting this to work!
 #
-# This file is part of fhem.
+# This file is part of FHEM.
 #
 # Fhem is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
