@@ -97,7 +97,7 @@ For more information see [CommandRef](https://fhem.de/commandref.html#update) or
 ### FHEM SVN
 You can also get the required files directly from the FHEM SVN with typing the following command into FHEM's command-line:\
 ```{ Svn_GetFile('contrib/RHASSPY/10_RHASSPY.pm', 'FHEM/10_RHASSPY.pm') }```
-and (if you e.g. want RHASSYP to respond in German):
+and (e.g. if you want RHASSPY to respond in German):
 ```{ Svn_GetFile('contrib/RHASSPY/rhasspy-de.cfg', './rhasspy-de.cfg') }```
 
 For more information see [FHEM-Wiki](https://wiki.fhem.de/wiki/Update#Einzelne_Dateien_aus_dem_SVN_holen).
@@ -161,7 +161,7 @@ All parameters are optional but changing some of them later may result in confus
   By default, RHASSPY - beside it's own attributes - uses the general _genericDeviceType_ attribute (which is also used by other voice command solutions) to identifiy the control-features of the devices you want to command. This option adds the attribute `genericDeviceType` to the _global_ attribute list. If you are not happy with the results _genericDeviceType_ provides, you may replace them by setting appropriate values in _rhasspyMapping_. Setting to zero will deactivate this feature: `useGenericAttrs=0`.
 
 * **`encoding`**\
-  If there are any problems with mutated vowels it's possible to set a specific character encoding. Default is _utf8_.
+  If there are any problems with mutated vowels, it's possible to set a specific character encoding. Default is _utf8_.
 
 Simple-Example for a define:
 ```
@@ -173,7 +173,7 @@ Full-Example for a define:
 define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceType=.+ defaultRoom=wohnzimmer language=de fhemId=fhem1 prefix=rhasspy2 useGenericAttrs=0 encoding=cp-1252
 ```
 
-**Important**: After defining the module, it's recommended to set the attribute `IODev`, e.g. by with `attr <deviceName> IODev <MQTT2_CLIENT deviceName>`.
+**Important**: After defining the device, it's recommended to set the attribute `IODev`, e.g. with `attr <deviceName> IODev <MQTT2_CLIENT deviceName>`.
 
 
 ### Set-Commands (SET)
@@ -218,7 +218,7 @@ define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceT
     Example: `set <rhasspyDevice> update devicemap_only`
   * **slots**\
     Sends a command to the HTTP-API of the Rhasspy master to update all slots on Rhasspy with actual FHEM-devices, rooms, etc.\
-    Updated/Created Slots are (excerpt, first two parts `en.fhem.` correspond to the settings in DEF):
+    Updated/Created Slots are (note: the first two parts `en.fhem.` correspond to the settings in DEF):
     - en.fhem.AllKeywords
     - en.fhem.Device
     - en.fhem.Device-*genericDeviceType*
@@ -256,11 +256,11 @@ define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceT
   If this attribute isn't set, English is used for voice responses.
   
   The file itself must contain a JSON-encoded keyword-value structure following the given structure for the mentioned English defaults. As a reference, there is a german language file available, also showcasing some advanced features, e.g. values for automatic injection of colour-related slots. Or it's possible to make a dump of the english structure (with e.g.: `{toJSON($defs{RHASSPY}->{helper}{lng})}`; replace *RHASSPY* by your device's name). Create a new file and edit this results as desired (or combine existing german showcase file with your content). There might be some variables to be used - these should also work in your sentences.\
-  *languageFile* also allows combining a default set of e.g. german sentences with some few own modifications by using "defaults" subtree for the defaults and "user" subtree for your modified versions. This feature might be helpful in case the base language structure has to be changed in the future.
+  *languageFile* also allows combining a default set of e.g. german sentences with some few own modifications by using the "defaults" subtree for the defaults and the "user" subtree for your modified versions. This feature might be helpful in case the base language structure has to be changed in the future.
   
   Example: `attr <rhasspyDevice> languageFile ./rhasspy-de.cfg`
   
-  Note: For compability with *configDB*, the *languageFile* reference is indicated as *CONFIGFILE* internal.
+  Note: For compability with *configDB*, the *languageFile* reference is indicated as a *CONFIGFILE* internal.
 
 * **forceNEXT**\
   If set to 1, RHASSPY will forward incoming messages also to further MQTT2-IO-client modules like MQTT2_DEVICE, even if the topic matches to one of it's own subscriptions. By default, these messages will not be forwarded for better compability with autocreate feature on MQTT2_DEVICE. See also [clientOrder](https://commandref.fhem.de/commandref.html#MQTT2_CLIENT) attribute in MQTT2 IO-type commandrefs. Setting this in one instance of RHASSPY might affect others, too.
@@ -434,8 +434,8 @@ Example:
 ```attr <device> rhasspyRoom livingroom```
 
 Additional remarks:
-* If siteId follows the grouping conventions in *Rhassy* ( *roomname.sub-satellite*), only *roomname* will be used as room info
-* You may use a special reading following the name convention 'siteId2room_*satellite*' to automatically redirect any siteId to the room indicated by *ReadingVal()* of this reading. See also myUtils example file (ins svn/contrib) for assinging suitable values by RHASSPY using a CustomIntent.
+* If siteId follows the grouping conventions in *Rhasspy* ( *roomname.sub-satellite*), only *roomname* will be used as room info.
+* You may use a special reading following the name convention 'siteId2room_*satellite*' to automatically redirect any siteId to the room, indicated by *ReadingVal()* for this reading. See also myUtils example file (ins svn/contrib) for assigning suitable values by RHASSPY using a CustomIntent.
 
 ### Attribute *rhasspyGroup*
 Comma-separated "labels" for the groups the device belongs to.
