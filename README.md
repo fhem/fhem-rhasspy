@@ -1038,7 +1038,7 @@ which day is today
 
 Example-Rhasspy-Sentences:
 ```
-[en.fhem:GetDatey]
+[en.fhem:GetDate]
 which day is today
 ```
 
