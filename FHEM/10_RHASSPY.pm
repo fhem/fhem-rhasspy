@@ -11,7 +11,7 @@
 # Thanks to Beta-User, rudolfkoenig, JensS, cb2sela and all the others
 # who did a great job getting this to work!
 #
-# This file is part of FHEM.
+# This file is part of fhem.
 #
 # Fhem is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -1717,10 +1717,10 @@ sub getDevicesByGroup {
 
     for my $dev (keys %{$hash->{helper}{devicemap}{devices}}) {
         my $allrooms = $hash->{helper}{devicemap}{devices}{$dev}->{rooms};
-        next if $room ne 'global' && $allrooms !~ m{\b$room(?:[\b:\s]|\Z)}x;
+        next if $room ne 'global' && $allrooms !~ m{\b$room(?:[\b:\s]|\Z)}i; ##no critic qw(RequireExtendedFormatting)
 
         my $allgroups = $hash->{helper}{devicemap}{devices}{$dev}->{groups} // next;
-        next if $allgroups !~ m{\b$group\b}x;
+        next if $allgroups !~ m{\b$group\b}i; ##no critic qw(RequireExtendedFormatting)
 
         my $specials = $hash->{helper}{devicemap}{devices}{$dev}{group_specials};
         my $label = $specials->{partOf} // $dev;
@@ -2087,7 +2087,7 @@ my $dispatchFns = {
     SetColorGroup       => \&handleIntentSetColorGroup,
     SetScene            => \&handleIntentSetScene,
     GetTime             => \&handleIntentGetTime,
-    GetWeekday          => \&handleIntentGetWeekday,
+    GetDate             => \&handleIntentGetDate,
     SetTimer            => \&handleIntentSetTimer,
     ConfirmAction       => \&handleIntentConfirmAction,
     CancelAction        => \&handleIntentCancelAction,
@@ -3447,12 +3447,12 @@ sub handleIntentGetTime {
 }
 
 
-# Handle incoming "GetWeekday" intents
-sub handleIntentGetWeekday {
+# Handle incoming "GetDate" intents
+sub handleIntentGetDate {
     my $hash = shift // return;
     my $data = shift // return;
 
-    Log3($hash->{NAME}, 5, "handleIntentGetWeekday called");
+    Log3($hash->{NAME}, 5, "handleIntentGetDate called");
 
     my $weekDay  = strftime( '%A', localtime );
     $weekDay  = $hash->{helper}{lng}{words}->{$weekDay} if defined $hash->{helper}{lng}{words}->{$weekDay};
@@ -4612,7 +4612,7 @@ yellow=rgb FFFF00</code></p>
   <li>SetColor</li>
   <li>SetColorGroup</li>
   <li>GetTime</li>
-  <li>GetWeekday</li>
+  <li>GetDate</li>
   <li>SetTimer</li>
   <li>ConfirmAction</li>
   <li>CancelAction</li>
