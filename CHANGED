@@ -1,1 +1,5 @@
+<<<<<<< HEAD
 ce2e6ab automatically updated control files
+=======
+6c28f28 fixed use of spaces in groupnames; renamed getweekday to getdate
+>>>>>>> dev
