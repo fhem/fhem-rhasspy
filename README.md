@@ -218,7 +218,7 @@ define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceT
     Example: `set <rhasspyDevice> update devicemap_only`
   * **slots**\
     Sends a command to the HTTP-API of the Rhasspy master to update all slots on Rhasspy with actual FHEM-devices, rooms, etc.\
-    Updated/Created Slots are (note: the first two parts `en.fhem.` correspond to the settings in DEF):
+    Updated/Created Slots are for example (note: the first two parts `en.fhem.` correspond to the settings in DEF):
     - en.fhem.AllKeywords
     - en.fhem.Device
     - en.fhem.Device-*genericDeviceType*
