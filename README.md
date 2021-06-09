@@ -49,6 +49,8 @@
 &nbsp;&nbsp;&nbsp;&nbsp;[ChoiceRoom](#choiceroom)\
 &nbsp;&nbsp;&nbsp;&nbsp;[ChoiceDevice](#choicedevice)\
 [Custom Intents](#custom-intents)\
+&nbsp;&nbsp;&nbsp;&nbsp;[99_myUtils.pm](#99_myutils.pm)\
+&nbsp;&nbsp;&nbsp;&nbsp;[Larger Intents in a separate File](#larger-intents-in-a-separate-file)\
 [Tips & Tricks](#tips--tricks)\
 &nbsp;&nbsp;&nbsp;&nbsp;[Custom Converter to use Real numbers](#custom-converter-to-use-real-numbers)\
 &nbsp;&nbsp;&nbsp;&nbsp;[Rhasspy speaks actual state of device after switching it](#rhasspy-speaks-actual-state-of-device-after-switching-it)\
@@ -1149,9 +1151,10 @@ can you [please] repeat the last sentence
 ### ChoiceDevice
 
 ## Custom Intents
+It's possible to create custom intents if the ones listed here don't match your requirements.\
+There are two ways to create this intents. For smaller ones you can use FHEM's 99_myUtils.pm. For more complex intents you can put them in a separate File.
 
-It's possible to create custom intents in FHEM's 99_myUtils.pm.
-
+### 99_myUtils.pm
 As example an intent that repeats the last voice response Rhasspy has spoken.
 
 Add the following `sub` to your 99_myUtils.pm:
@@ -1174,6 +1177,11 @@ Last add a new sentence to sentence.ini of your Rhasspy base:
 [de.fhem:Respeak]
 what did you say
 ```
+
+### Larger Intents in a separate File
+tbd
+
+See [https://github.com/fhem/fhem-rhasspy/blob/dev/FHEM/99_RHASSPY_Utils_Demo.pm](99_RHASSPY_Utils_Demo.pm) for further information.
 
 ## Tips & Tricks
 
