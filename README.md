@@ -49,7 +49,7 @@
 &nbsp;&nbsp;&nbsp;&nbsp;[ChoiceRoom](#choiceroom)\
 &nbsp;&nbsp;&nbsp;&nbsp;[ChoiceDevice](#choicedevice)\
 [Custom Intents](#custom-intents)\
-&nbsp;&nbsp;&nbsp;&nbsp;[99_myUtils.pm](#99_myutils.pm)\
+&nbsp;&nbsp;&nbsp;&nbsp;[99_myUtils.pm](#99_myutilspm)\
 &nbsp;&nbsp;&nbsp;&nbsp;[Larger Intents in a separate File](#larger-intents-in-a-separate-file)\
 [Tips & Tricks](#tips--tricks)\
 &nbsp;&nbsp;&nbsp;&nbsp;[Custom Converter to use Real numbers](#custom-converter-to-use-real-numbers)\
@@ -72,6 +72,9 @@ FHEM-rhasspy evaluates parts of the MQTT traffic, converts these JSON-messages t
 FHEM-rhasspy uses the 00_MQTT2_CLIENT.pm module to receive and send these messages. Therefore it is necessary to define an MQTT2_CLIENT device in FHEM before using FHEM-rhasspy.
 
 fhem-rhasspy is based on the [Snips-Module](https://github.com/Thyraz/Snips-Fhem). Thanks to Thyraz, who did all the groundwork with his!
+
+Regarding dialogues, keep in mind that RHASSPY heavily relies on the mechanisms as described in [https://rhasspy.readthedocs.io/en/latest/reference/#dialogue-manager](Rhasspy Dialogue Manager documentation).
+So don't expect these parts to work if you configured Rhasspy to use other dialogue management options than Rhasspy's own dialogue management.
 
 ## Installation of FHEM-rhasspy
 Be sure to use an up-to-date version of FHEM, because some of the features require actual FHEM-components to work. So update FHEM before installing FHEM-rhasspy.\
@@ -324,7 +327,7 @@ define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceT
     Response to be send to the caller. If not set, the return value of the called function will be used.\
     Response sentence will be parsed to do "set magic"-like replacements, so also a line like `i="what's the time for sunrise" r="at [Astro:SunRise] o'clock"` is valid.
 	You may ask for confirmation as well using the following (optional) shorts:
-    * **c**: Confirmation request: Command will only be executed, when separate confirmation is spoken. Value _c_ is either numeric or text. If numeric: Timeout to wait for automatic cancellation. If text: response to send to ask for confirmation.
+    * **c**: Confirmation request: Command will only be executed, when separate confirmation is spoken. Value _c_ is either numeric or text. If numeric: Timeout to wait for automatic cancellation. If text: response to send to ask for confirmation. Only reliably works if dialogue management setting in Rhasspy is set to *Rhasspy*.
     * **ct**: Numeric value for timeout in seconds, default: 15
 
 * **rhasspyTweaks**\
