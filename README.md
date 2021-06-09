@@ -5,7 +5,6 @@
 [Read First](#Read-First)\
 [About Rhasspy](#About-Rhasspy)\
 [About FHEM-rhasspy](#About-FHEM-rhasspy)\
-[About this repository](#about-this-repository)\
 [Installation of FHEM-rhasspy](#Installation-of-FHEM-rhasspy)\
 &nbsp;&nbsp;&nbsp;&nbsp;[Manual Installation](#manual-installation)\
 &nbsp;&nbsp;&nbsp;&nbsp;[FHEM Update and Git](#fhem-update-and-git)\
@@ -71,10 +70,6 @@ FHEM-rhasspy evaluates parts of the MQTT traffic, converts these JSON-messages t
 FHEM-rhasspy uses the 00_MQTT2_CLIENT.pm module to receive and send these messages. Therefore it is necessary to define an MQTT2_CLIENT device in FHEM before using FHEM-rhasspy.
 
 fhem-rhasspy is based on the [Snips-Module](https://github.com/Thyraz/Snips-Fhem). Thanks to Thyraz, who did all the groundwork with his!
-
-## About this repository
-
-This repository contains all files to set up a complete installation to test Rhasspy and FHEM with Docker under Windows using the Windows Subsystem for Linux (WSL).
 
 ## Installation of FHEM-rhasspy
 Be sure to use an up-to-date version of FHEM, because some of the features require actual FHEM-components to work. So update FHEM before installing FHEM-rhasspy.\
