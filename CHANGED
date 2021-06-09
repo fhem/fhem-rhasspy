@@ -1,1 +1,1 @@
-6c28f28 fixed use of spaces in groupnames; renamed getweekday to getdate
+24cd91f fixed ConfirmAction (https://forum.fhem.de/index.php/topic,119447.msg1161535.html#msg1161535)
