@@ -345,7 +345,7 @@ sub Define {
 
     $hash->{defaultRoom} = $defaultRoom;
     my $language = $h->{language} // shift @{$anon} // lc AttrVal('global','language','en');
-    $hash->{MODULE_VERSION} = '0.4.22';
+    $hash->{MODULE_VERSION} = '0.4.23';
     $hash->{baseUrl} = $Rhasspy;
     initialize_Language($hash, $language) if !defined $hash->{LANGUAGE} || $hash->{LANGUAGE} ne $language;
     $hash->{LANGUAGE} = $language;
@@ -764,7 +764,7 @@ hermes/dialogueManager/configure (JSON)
 
     my $json = toJSON($sendData);
 
-    IOWrite($hash, 'publish', qq{hermes/dialogueManager/configure $json});
+    IOWrite($hash, 'publish', qq{hermes/dialogueManager/configure:r $json});
     return;
 }
 
@@ -1188,14 +1188,15 @@ sub RHASSPY_DialogTimeout {
     my $identiy = $fnHash->{MODIFIER};
 
     my $data     = shift // $hash->{helper}{'.delayed'}->{$identiy};
-    delete $hash->{helper}{'.delayed'}{$identiy};
-    deleteSingleRegIntTimer($identiy, $hash, 1); 
-
     my $siteId = $data->{siteId};
     #dialog my $toDisable = defined $data->{'.ENABLED'} ? $data->{'.ENABLED'} : [qw(ConfirmAction CancelAction)];
 
-    my $response = $hash->{helper}{lng}->{responses}->{DefaultConfirmationTimeout};
-    respond ($hash, $data->{requestType}, $data->{sessionId}, $siteId, $response);
+    delete $hash->{helper}{'.delayed'}{$identiy};
+    deleteSingleRegIntTimer($identiy, $hash, 1); 
+
+
+    #my $response = $hash->{helper}{lng}->{responses}->{DefaultConfirmationTimeout};
+    respond ($hash, $data->{requestType}, $data->{sessionId}, $siteId, getResponse( $hash, 'DefaultConfirmationTimeout' ));
     #dialog configure_DialogManager($hash, $siteId, $toDisable, 'false');
 
     return;
@@ -1212,7 +1213,7 @@ sub setDialogTimeout {
     #dialog $data->{'.ENABLED'} = $toEnable;
     my $identiy = qq($data->{sessionId});
 
-    $response = $hash->{helper}{lng}->{responses}->{DefaultConfirmationReceived} if $response eq 'default';
+    $response = getResponse($hash, 'DefaultConfirmationReceived') if $response eq 'default';
     $hash->{helper}{'.delayed'}{$identiy} = $data;
 
     resetRegIntTimer( $identiy, time + $timeout, \&RHASSPY_DialogTimeout, $hash, 0);
@@ -1223,11 +1224,7 @@ sub setDialogTimeout {
         my $id = qq{$hash->{LANGUAGE}.$hash->{fhemId}:$_};
         push @ca_strings, $id;
     }
-    
-    #my $ca_part = qq{$hash->{LANGUAGE}.$hash->{fhemId}:ConfirmAction};
-    #push @ca_strings, $ca_part;
-    #$ca_part = qq{$hash->{LANGUAGE}.$hash->{fhemId}:CancelAction};
-    #push @ca_strings, $ca_part;
+
     my $reaction = ref $response eq 'HASH' 
         ? $response
         : { text         => $response, 
@@ -1238,14 +1235,13 @@ sub setDialogTimeout {
 
     #dialog configure_DialogManager($hash, $siteId, $toEnable, 'true');
     respond ($hash, $data->{requestType}, $data->{sessionId}, $data->{siteId}, $reaction);
-    
+
     my $toTrigger = $hash->{'.toTrigger'} // $hash->{NAME};
     delete $hash->{'.toTrigger'};
 
     return $toTrigger;
 }
 
-#from https://stackoverflow.com/a/43873983, modified...
 sub get_unique {
     my $arr    = shift;
     my $sorted = shift; #true if shall be sorted (longest first!)
@@ -1344,7 +1340,8 @@ sub getAllRhasspyNames {
     return get_unique(\@devices, 1 );
 }
 
-# Alle Raumbezeichnungen sammeln
+
+# Get all room names with Rhasspy relevance
 sub getAllRhasspyRooms {
     my $hash = shift // return;
     return keys %{$hash->{helper}{devicemap}{rhasspyRooms}} if defined $hash->{helper}{devicemap};
@@ -1410,6 +1407,7 @@ sub getAllRhasspyGroups {
     return get_unique(\@groups, 1);
 }
 
+# get a list of all used scenes
 sub getAllRhasspyScenes {
     my $hash = shift // return;
     
@@ -2239,7 +2237,9 @@ sub respond {
 sub getResponse {
     my $hash = shift;
     my $identifier = shift // return 'Code error! No identifier provided for getResponse!' ;
+    my $subtype = shift;
 
+    return $hash->{helper}{lng}->{responses}->{$identifier}->{$subtype} if defined $subtype;
     return getKeyValFromAttr($hash, $hash->{NAME}, 'response', $identifier) // $hash->{helper}{lng}->{responses}->{$identifier};
 }
 
@@ -2793,7 +2793,7 @@ sub handleIntentSetTimedOnOff {
 
     Log3($hash->{NAME}, 5, "handleIntentSetTimedOnOff called");
 
-    return respond ($hash, $data->{requestType}, $data->{sessionId}, $data->{siteId}, $hash->{helper}{lng}->{responses}->{duration_not_understood}) 
+    return respond ($hash, $data->{requestType}, $data->{sessionId}, $data->{siteId}, getResponse( $hash, 'duration_not_understood' )) 
     if !defined $data->{Hourabs} && !defined $data->{Hour} && !defined $data->{Min} && !defined $data->{Sec};
     
     # Device AND Value must exist
@@ -2859,8 +2859,8 @@ sub handleIntentSetTimedOnOffGroup {
 
     Log3($hash->{NAME}, 5, "handleIntentSetTimedOnOffGroup called");
 
-    return respond ($hash, $data->{requestType}, $data->{sessionId}, $data->{siteId}, getResponse($hash, 'NoValidData')) if !defined $data->{Value}; 
-    return respond ($hash, $data->{requestType}, $data->{sessionId}, $data->{siteId}, $hash->{helper}{lng}->{responses}->{duration_not_understood}) 
+    return respond( $hash, $data->{requestType}, $data->{sessionId}, $data->{siteId}, getResponse( $hash, 'NoValidData' ) ) if !defined $data->{Value}; 
+    return respond( $hash, $data->{requestType}, $data->{sessionId}, $data->{siteId}, getResponse( $hash, 'duration_not_understood' ) ) 
     if !defined $data->{Hourabs} && !defined $data->{Hour} && !defined $data->{Min} && !defined $data->{Sec};
 
     my $devices = getDevicesByGroup($hash, $data);
@@ -3277,7 +3277,7 @@ sub handleIntentGetNumeric {
     if ( defined $mapping->{response} ) {
         return respond ($hash, $data->{requestType}, $data->{sessionId}, $data->{siteId}, _getValue($hash, $device, $mapping->{response}, $value, $location));
     }
-    my $responses = $hash->{helper}{lng}->{responses}->{Change};
+    my $responses = getResponse( $hash, 'Change' );
 
     # Antwort falls mappingType oder type matched
     my $response = 
@@ -3447,7 +3447,7 @@ sub handleIntentGetTime {
     Log3($hash->{NAME}, 5, "handleIntentGetTime called");
 
     (my $sec,my $min,my $hour,my $mday,my $mon,my $year,my $wday,my $yday,my $isdst) = localtime;
-    my $response = $hash->{helper}{lng}->{responses}->{timeRequest};
+    my $response = getResponse( $hash, 'timeRequest' );
     $response =~ s{(\$\w+)}{$1}eegx;
     Log3($hash->{NAME}, 5, "Response: $response");
 
@@ -3469,7 +3469,7 @@ sub handleIntentGetDate {
     $month  = $hash->{helper}{lng}{words}->{$month} if defined $hash->{helper}{lng}{words}->{$month};
     my $year = strftime( '%G', localtime );
     my $day = strftime( '%e', localtime );
-    my $response = $hash->{helper}{lng}->{responses}->{weekdayRequest};
+    my $response = getResponse( $hash, 'weekdayRequest' );
     $response =~ s{(\$\w+)}{$1}eegx;
 
     Log3($hash->{NAME}, 5, "Response: $response");
@@ -3768,7 +3768,7 @@ sub handleIntentSetTimer {
 
     Log3($name, 5, 'handleIntentSetTimer called');
 
-    return respond ($hash, $data->{requestType}, $data->{sessionId}, $data->{siteId}, $hash->{helper}{lng}->{responses}->{duration_not_understood}) 
+    return respond ($hash, $data->{requestType}, $data->{sessionId}, $data->{siteId}, getResponse( $hash, 'duration_not_understood' ) ) 
     if !defined $data->{Hourabs} && !defined $data->{Hour} && !defined $data->{Min} && !defined $data->{Sec} && !defined $data->{CancelTimer};
 
     my $room = getRoomName($hash, $data);
@@ -3799,11 +3799,11 @@ sub handleIntentSetTimer {
 
     my $timerRoom = $siteId;
 
-    my $responseEnd = $hash->{helper}{lng}->{responses}->{timerEnd}->{1};
+    my $responseEnd = getResponse( $hash, 'timerEnd', 1);
 
     if ($siteIds =~ m{\b$room\b}ix) {
         $timerRoom = $room if $siteIds =~ m{\b$room\b}ix;
-        $responseEnd = $hash->{helper}{lng}->{responses}->{timerEnd}->{0};
+        $responseEnd = getResponse( $hash, 'timerEnd', 0);
     }
 
     my $roomReading = "timer_".makeReadingName($room);
@@ -3877,7 +3877,7 @@ sub handleIntentSetTimer {
             $minutes = $time[1];
             $range = 4 + $tomorrow;
         }
-        $response = $hash->{helper}{lng}->{responses}->{timerSet}->{$range};
+        $response = getResponse( $hash, 'timerSet', $range);
         $response =~ s{(\$\w+)}{$1}eegx;
     }
 
@@ -4011,7 +4011,7 @@ sub handleIntentReSpeak {
     my $data = shift // return;
     my $name = $hash->{NAME};
 
-    my $response = ReadingsVal($name,'voiceResponse',$hash->{helper}{lng}->{responses}->{reSpeak_failed});
+    my $response = ReadingsVal($name,'voiceResponse',getResponse( $hash, 'reSpeak_failed' ));
 
     Log3($hash->{NAME}, 5, 'handleIntentReSpeak called');
 
@@ -4231,13 +4231,25 @@ https://forum.fhem.de/index.php/topic,113180.msg1130754.html#msg1130754
 <h3>RHASSPY</h3>
 <p>This module receives, processes and executes voice commands coming from <a href="https://rhasspy.readthedocs.io/en/latest/">Rhasspy voice assistent</a>.</p>
 
+<p><b>General Remarks:</b><br>
+<ul>
+<li>
+<a id="RHASSPY-dialoguemanagement"></a>For dialogues, RHASSPY relies on the mechanisms as described in <a href="https://rhasspy.readthedocs.io/en/latest/reference/#dialogue-manager">Rhasspy Dialogue Manager documentation</a>.<br>
+So don't expect these parts to work if you use other options than Rhasspy's own dialogue management.</li>
+<li>
+<a id="RHASSPY-additional-files"></a>You may need or want some additional materials to get the best out of RHASSPY in FHEM. So have a look at the additional files and examples provided in <a href="
+https://svn.fhem.de/trac/browser/trunk/fhem/contrib/RHASSPY">svn contrib</a>.<br>See especially attributes <a href="#RHASSPY-attr-languageFile">languageFile</a> and <a href="#RHASSPY-attr-rhasspyIntents">rhasspyIntents</a> for further reference.</li>
+</ul>
+
 <a id="RHASSPY-define"></a>
 <h4>Define</h4>
 <p><code>define &lt;name&gt; RHASSPY &lt;baseUrl&gt; &lt;devspec&gt; &lt;defaultRoom&gt; &lt;language&gt; &lt;fhemId&gt; &lt;prefix&gt; &lt;useGenericAttrs&gt; &lt;encoding&gt;</code></p>
 <p><b>All parameters in define are optional, but changing them later might lead to confusing results!</b></p>
-<p><a id="RHASSPY-parseParams"></a><b>General Remark:</b> RHASSPY uses <a href="https://wiki.fhem.de/wiki/DevelopmentModuleAPI#parseParams"><b>parseParams</b></a> at quite a lot places, not only in define, but also to parse attribute values.<br>
-So all parameters in define should be provided in the <i>key=value</i> form. In other places you may have to start e.g. a single line in an attribute with <code>option:key="value xy shall be z"</code> or <code>identifier:yourCode={fhem("set device off")} anotherOption=blabla</code> form.</p>
-
+<p><b>Remark:</b><br><a id="RHASSPY-parseParams"></a>
+RHASSPY uses <a href="https://wiki.fhem.de/wiki/DevelopmentModuleAPI#parseParams"><b>parseParams</b></a> at quite a lot places, not only in define, but also to parse attribute values.<br>
+So all parameters in define should be provided in the <i>key=value</i> form. In other places you may have to start e.g. a single line in an attribute with <code>option:key="value xy shall be z"</code> or <code>identifier:yourCode={fhem("set device off")} anotherOption=blabla</code> form.
+</p>
+<p><b>Parameters:</b><br>
 <ul>
   <li><b>baseUrl</b>: http-address of the Rhasspy service web-interface. Optional. Default is <code>baseUrl=http://127.0.0.1:12101</code>.<br>Make sure, this is set to correct values (ip and port)</li>
   <li><b>devspec</b>: A description of devices that should be controlled by Rhasspy. Optional. Default is <code>devspec=room=Rhasspy</code>, see <a href="#devspec"> as a reference</a>, how to e.g. use a comma-separated list of devices or combinations like <code>devspec=room=livingroom,room=bathroom,bedroomlamp</code>.</li>
@@ -4378,7 +4390,7 @@ When changing something relevant within FHEM for either the data structure in</p
   <li>
     <a id="RHASSPY-attr-languageFile"></a><b>languageFile</b><br>
     <p>Path to the language-config file. If this attribute isn't set, a default set of english responses is used for voice responses.<br>
-    The file itself must contain a JSON-encoded keyword-value structure (partly with sub-structures) following the given structure for the mentioned english defaults. As a reference, there's one available in german, or just make a dump of the English structure with e.g. (replace RHASSPY by your device's name): <code>{toJSON($defs{RHASSPY}->{helper}{lng})}</code>, edit the result e.g. using https://jsoneditoronline.org and place this in your own languageFile version. There might be some variables to be used - these should also work in your sentences.<br>
+    The file itself must contain a JSON-encoded keyword-value structure (partly with sub-structures) following the given structure for the mentioned english defaults. As a reference, there's one in the <a href="#RHASSPY-additional-files">additionals files</a> available in german (note the comments there!), or just make a dump of the English structure with e.g. (replace RHASSPY by your device's name): <code>{toJSON($defs{RHASSPY}->{helper}{lng})}</code>, edit the result e.g. using https://jsoneditoronline.org and place this in your own languageFile version. There might be some variables to be used - these should also work in your sentences.<br>
     languageFile also allows combining e.g. a default set of german sentences with some few own modifications by using "defaults" subtree for the defaults and "user" subtree for your modified versions. This feature might be helpful in case the base language structure has to be changed in the future.</p>
     <p>Example (placed in the same dir fhem.pl is located):</p>
     <p><code>attr &lt;rhasspyDevice&gt; languageFile ./rhasspy-de.cfg</code></p>
@@ -4386,7 +4398,7 @@ When changing something relevant within FHEM for either the data structure in</p
 
   <li>
     <a id="RHASSPY-attr-response"></a><b>response</b>
-    <p><b>Not recommended. Use the language-file instead.</b></p>
+    <p><b>Note:</b> Using this attribute is no longer recommended, use options provided by the <a href="#RHASSPY-attr-languageFile">languageFile attribute</a> instead.</p>
     <p>Optionally define alternative default answers. Available keywords are <code>DefaultError</code>, <code>NoActiveMediaDevice</code> and <code>DefaultConfirmation</code>.</p>
     <p>Example:</p>
     <p><code>DefaultError=
@@ -4413,7 +4425,7 @@ DefaultConfirmation=Klaro, mach ich</code></p>
     <li>siteId, Device etc. => any element out of the JSON-$data.</li>
     </ul>
     <p>If a simple text is returned, this will be considered as response.<br>
-    For more advanced use of this feature, you may return an array. First element of the array will be interpreted as comma-separated list of devices that may have been modified (otherwise, these devices will not cast any events! See also the "d" parameter in <a href="#RHASSPY-attr-rhasspyShortcuts"><i>rhasspyShortcuts</i></a>). The second element is interpreted as response and may either be simple text or HASH-type data. This will keep the dialogue-session open to allow interactive data exchange with <i>Rhasspy</i>. An open dialogue will be closed after some time, default is 20 seconds, you may alternatively hand over other numeric values as third element of the array.</p>
+    For more advanced use of this feature, you may return an array. First element of the array will be interpreted as comma-separated list of devices that may have been modified (otherwise, these devices will not cast any events! See also the "d" parameter in <a href="#RHASSPY-attr-rhasspyShortcuts"><i>rhasspyShortcuts</i></a>). The second element is interpreted as response and may either be simple text or HASH-type data. This will keep the dialogue-session open to allow interactive data exchange with <i>Rhasspy</i>. An open dialogue will be closed after some time, default is 20 seconds, you may alternatively hand over other numeric values as third element of the array.<br>See also <a href="#RHASSPY-additional-files">additionals files</a> for further examples on this.</p>
   </li>
 
   <li>
