@@ -5,7 +5,6 @@
 [Read First](#Read-First)\
 [About Rhasspy](#About-Rhasspy)\
 [About FHEM-rhasspy](#About-FHEM-rhasspy)\
-[About this repository](#about-this-repository)\
 [Installation of FHEM-rhasspy](#Installation-of-FHEM-rhasspy)\
 &nbsp;&nbsp;&nbsp;&nbsp;[Manual Installation](#manual-installation)\
 &nbsp;&nbsp;&nbsp;&nbsp;[FHEM Update and Git](#fhem-update-and-git)\
@@ -50,6 +49,8 @@
 &nbsp;&nbsp;&nbsp;&nbsp;[ChoiceRoom](#choiceroom)\
 &nbsp;&nbsp;&nbsp;&nbsp;[ChoiceDevice](#choicedevice)\
 [Custom Intents](#custom-intents)\
+&nbsp;&nbsp;&nbsp;&nbsp;[99_myUtils.pm](#99_myutilspm)\
+&nbsp;&nbsp;&nbsp;&nbsp;[Larger Intents in a separate File](#larger-intents-in-a-separate-file)\
 [Tips & Tricks](#tips--tricks)\
 &nbsp;&nbsp;&nbsp;&nbsp;[Custom Converter to use Real numbers](#custom-converter-to-use-real-numbers)\
 &nbsp;&nbsp;&nbsp;&nbsp;[Rhasspy speaks actual state of device after switching it](#rhasspy-speaks-actual-state-of-device-after-switching-it)\
@@ -72,9 +73,8 @@ FHEM-rhasspy uses the 00_MQTT2_CLIENT.pm module to receive and send these messag
 
 fhem-rhasspy is based on the [Snips-Module](https://github.com/Thyraz/Snips-Fhem). Thanks to Thyraz, who did all the groundwork with his!
 
-## About this repository
-
-This repository contains all files to set up a complete installation to test Rhasspy and FHEM with Docker under Windows using the Windows Subsystem for Linux (WSL).
+Regarding dialogues, keep in mind that RHASSPY heavily relies on the mechanisms as described in [https://rhasspy.readthedocs.io/en/latest/reference/#dialogue-manager](Rhasspy Dialogue Manager documentation).
+So don't expect these parts to work if you configured Rhasspy to use other dialogue management options than Rhasspy's own dialogue management.
 
 ## Installation of FHEM-rhasspy
 Be sure to use an up-to-date version of FHEM, because some of the features require actual FHEM-components to work. So update FHEM before installing FHEM-rhasspy.\
@@ -218,7 +218,7 @@ define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceT
     Example: `set <rhasspyDevice> update devicemap_only`
   * **slots**\
     Sends a command to the HTTP-API of the Rhasspy master to update all slots on Rhasspy with actual FHEM-devices, rooms, etc.\
-    Updated/Created Slots are (note: the first two parts `en.fhem.` correspond to the settings in DEF):
+    Updated/Created Slots are for example (note: the first two parts `en.fhem.` correspond to the settings in DEF):
     - en.fhem.AllKeywords
     - en.fhem.Device
     - en.fhem.Device-*genericDeviceType*
@@ -327,7 +327,7 @@ define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceT
     Response to be send to the caller. If not set, the return value of the called function will be used.\
     Response sentence will be parsed to do "set magic"-like replacements, so also a line like `i="what's the time for sunrise" r="at [Astro:SunRise] o'clock"` is valid.
 	You may ask for confirmation as well using the following (optional) shorts:
-    * **c**: Confirmation request: Command will only be executed, when separate confirmation is spoken. Value _c_ is either numeric or text. If numeric: Timeout to wait for automatic cancellation. If text: response to send to ask for confirmation.
+    * **c**: Confirmation request: Command will only be executed, when separate confirmation is spoken. Value _c_ is either numeric or text. If numeric: Timeout to wait for automatic cancellation. If text: response to send to ask for confirmation. Only reliably works if dialogue management setting in Rhasspy is set to *Rhasspy*.
     * **ct**: Numeric value for timeout in seconds, default: 15
 
 * **rhasspyTweaks**\
@@ -1154,9 +1154,10 @@ can you [please] repeat the last sentence
 ### ChoiceDevice
 
 ## Custom Intents
+It's possible to create custom intents if the ones listed here don't match your requirements.\
+There are two ways to create this intents. For smaller ones you can use FHEM's 99_myUtils.pm. For more complex intents you can put them in a separate File.
 
-It's possible to create custom intents in FHEM's 99_myUtils.pm.
-
+### 99_myUtils.pm
 As example an intent that repeats the last voice response Rhasspy has spoken.
 
 Add the following `sub` to your 99_myUtils.pm:
@@ -1179,6 +1180,11 @@ Last add a new sentence to sentence.ini of your Rhasspy base:
 [de.fhem:Respeak]
 what did you say
 ```
+
+### Larger Intents in a separate File
+tbd
+
+See [https://github.com/fhem/fhem-rhasspy/blob/dev/FHEM/99_RHASSPY_Utils_Demo.pm](99_RHASSPY_Utils_Demo.pm) for further information.
 
 ## Tips & Tricks
 
