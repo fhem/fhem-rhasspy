@@ -1,4 +1,4 @@
-# $Id: 10_RHASSPY.pm 24573 + no configure_DialogManager in dialogues $
+# $Id: 10_RHASSPY.pm 24573 + switchable configure_DialogManager + $
 ###########################################################################
 #
 # FHEM RHASSPY modul  (https://github.com/rhasspy)
@@ -33,7 +33,7 @@ use strict;
 use warnings;
 use Carp qw(carp);
 use GPUtils qw(:all);
-use JSON;
+use JSON qw(decode_json);
 use Encode;
 use HttpUtils;
 use utf8;
@@ -337,7 +337,7 @@ sub Define {
 
     my @unknown;
     for (keys %{$h}) {
-        push @unknown, $_ if $_ !~ m{\A(?:baseUrl|defaultRoom|language|devspec|fhemId|prefix|encoding|useGenericAttrs)\z}xm;
+        push @unknown, $_ if $_ !~ m{\A(?:baseUrl|defaultRoom|language|devspec|fhemId|prefix|encoding|useGenericAttrs|switchDM)\z}xm;
     }
     my $err = join q{, }, @unknown;
     return "unknown key(s) in DEF: $err" if @unknown && $init_done;
@@ -345,7 +345,7 @@ sub Define {
 
     $hash->{defaultRoom} = $defaultRoom;
     my $language = $h->{language} // shift @{$anon} // lc AttrVal('global','language','en');
-    $hash->{MODULE_VERSION} = '0.4.23';
+    $hash->{MODULE_VERSION} = '0.4.26';
     $hash->{baseUrl} = $Rhasspy;
     initialize_Language($hash, $language) if !defined $hash->{LANGUAGE} || $hash->{LANGUAGE} ne $language;
     $hash->{LANGUAGE} = $language;
@@ -362,6 +362,7 @@ sub Define {
         addToAttrList(q{genericDeviceType});
         #addToAttrList(q{homebridgeMapping});
     }
+    $hash->{switchDM} = $h->{switchDM} if defined $h->{switchDM};
 
     return $init_done ? firstInit($hash) : InternalTimer(time+1, \&firstInit, $hash );
 }
@@ -373,17 +374,16 @@ sub firstInit {
 
     # IO
     AssignIoPort($hash);
-    my $IODev = AttrVal( $name, 'IODev', ReadingsVal( $name, 'IODev', InternalVal($name, 'IODev', undef )));
+    my $IODev = AttrVal( $name, 'IODev', ReadingsVal( $name, 'IODev', InternalVal($name, 'IODev', undef )->{NAME}));
 
     return if !$init_done || !defined $IODev;
     RemoveInternalTimer($hash);
     deleteAllRegIntTimer($hash);
-  
-    IOWrite($hash, 'subscriptions', join q{ }, @topics) if InternalVal($IODev,'TYPE',undef) eq 'MQTT2_CLIENT';
 
     fetchSiteIds($hash) if !ReadingsVal( $name, 'siteIds', 0 );
     initialize_rhasspyTweaks($hash, AttrVal($name,'rhasspyTweaks', undef ));
     configure_DialogManager($hash);
+    IOWrite($hash, 'subscriptions', join q{ }, @topics) if InternalVal($IODev,'TYPE',undef) eq 'MQTT2_CLIENT';
     initialize_devicemap($hash);
 
     return;
@@ -720,18 +720,20 @@ sub initialize_rhasspyTweaks {
 
 sub configure_DialogManager {
     my $hash      = shift // return;
-    my $siteId    = shift;
+    Log3($hash,3,"R-DM for $hash->{NAME} called");
+    my $siteId    = shift // ReadingsVal( $hash->{NAME}, 'siteIds', 'default' ) // return;
     my $toDisable = shift // [qw(ConfirmAction CancelAction ChoiceRoom ChoiceDevice)];
     my $enable    = shift // q{false};
     #return if !$hash->{testing};
 
     #loop for global initialization or for several siteId's
-    if (!defined $siteId || $siteId =~ m{,}xms) {
-        $siteId = ReadingsVal( $hash->{NAME}, 'siteIds', 'default' ) if !defined $siteId;
+    #Log3($hash,3,"R-DM - $siteId $toDisable $enable");
+    if ( $siteId =~ m{,}xms ) {
         my @siteIds = split m{,}xms, $siteId;
         for (@siteIds) {
             configure_DialogManager($hash, $_, $toDisable, $enable);
         }
+        return;
     }
 
     my $language = $hash->{LANGUAGE};
@@ -762,9 +764,10 @@ hermes/dialogueManager/configure (JSON)
         intents => [@disabled]
     };
 
-    my $json = toJSON($sendData);
+    my $json = _toCleanJSON($sendData);
+    #Log3($hash,3,qq{hermes/dialogueManager/configure $json});
 
-    IOWrite($hash, 'publish', qq{hermes/dialogueManager/configure:r $json});
+    IOWrite($hash, 'publish', qq{hermes/dialogueManager/configure $json});
     return;
 }
 
@@ -1189,15 +1192,13 @@ sub RHASSPY_DialogTimeout {
 
     my $data     = shift // $hash->{helper}{'.delayed'}->{$identiy};
     my $siteId = $data->{siteId};
-    #dialog my $toDisable = defined $data->{'.ENABLED'} ? $data->{'.ENABLED'} : [qw(ConfirmAction CancelAction)];
+    my $toDisable = defined $data->{'.ENABLED'} ? $data->{'.ENABLED'} : [qw(ConfirmAction CancelAction)]; #dialog 
 
     delete $hash->{helper}{'.delayed'}{$identiy};
     deleteSingleRegIntTimer($identiy, $hash, 1); 
 
-
-    #my $response = $hash->{helper}{lng}->{responses}->{DefaultConfirmationTimeout};
     respond ($hash, $data->{requestType}, $data->{sessionId}, $siteId, getResponse( $hash, 'DefaultConfirmationTimeout' ));
-    #dialog configure_DialogManager($hash, $siteId, $toDisable, 'false');
+    configure_DialogManager($hash, $siteId, $toDisable, 'false') if $hash->{switchDM}; #dialog
 
     return;
 }
@@ -1210,7 +1211,7 @@ sub setDialogTimeout {
     my $toEnable = shift // [qw(ConfirmAction CancelAction)];
 
     my $siteId = $data->{siteId};
-    #dialog $data->{'.ENABLED'} = $toEnable;
+    $data->{'.ENABLED'} = $toEnable; #dialog 
     my $identiy = qq($data->{sessionId});
 
     $response = getResponse($hash, 'DefaultConfirmationReceived') if $response eq 'default';
@@ -1229,11 +1230,11 @@ sub setDialogTimeout {
         ? $response
         : { text         => $response, 
             intentFilter => [@ca_strings],
-            sendIntentNotRecognized => 'false'
-            #customData => $data
+            sendIntentNotRecognized => 'false',
+            customData => $data->{customData}
           };
 
-    #dialog configure_DialogManager($hash, $siteId, $toEnable, 'true');
+    configure_DialogManager($hash, $siteId, $toEnable, 'true') if $hash->{switchDM}; #dialog 
     respond ($hash, $data->{requestType}, $data->{sessionId}, $data->{siteId}, $reaction);
 
     my $toTrigger = $hash->{'.toTrigger'} // $hash->{NAME};
@@ -2219,7 +2220,7 @@ sub respond {
         $sendData->{text} = $response
     }
 
-    my $json = toJSON($sendData);
+    my $json = _toCleanJSON($sendData);
     $response = $response->{response} if ref $response eq 'HASH' && defined $response->{response};
     readingsBeginUpdate($hash);
     $type eq 'voice' ?
@@ -2253,7 +2254,7 @@ sub sendTextCommand {
          input => $text,
          sessionId => "$hash->{fhemId}.textCommand"
     };
-    my $message = toJSON($data);
+    my $message = _toCleanJSON($data);
 
     # Send fake command, so it's forwarded to NLU
     # my $topic2 = "hermes/intent/FHEM:TextCommand";
@@ -2288,7 +2289,7 @@ sub sendSpeakCommand {
             return 'speak needs siteId and text as arguments!';
         }
     }
-    my $json = toJSON($sendData);
+    my $json = _toCleanJSON($sendData);
     return IOWrite($hash, 'publish', qq{hermes/tts/say $json});
 }
 
@@ -3235,6 +3236,7 @@ sub handleIntentGetNumeric {
         my $response = $device->[1];
         my $all = $device->[2];
         my $choice = $device->[3];
+        $data->{customData} = $all;
         my $toActivate = $choice eq 'RequestChoiceDevice' ? [qw(ChoiceDevice CancelAction)] : [qw(ChoiceRoom CancelAction)];
         $device = $first;
         Log3($hash->{NAME}, 5, "More than one device possible, response is $response, first is $first, all are $all, type is $choice");
@@ -3894,17 +3896,16 @@ sub handleIntentCancelAction {
 
     Log3($hash->{NAME}, 5, 'handleIntentCancelAction called');
 
-    #dialog my $toDisable = defined $data->{'.ENABLED'} ? $data->{'.ENABLED'} : [qw(ConfirmAction CancelAction)];
+    my $toDisable = defined $data->{'.ENABLED'} ? $data->{'.ENABLED'} : [qw(ConfirmAction CancelAction)]; #dialog
 
     my $identiy = qq($data->{sessionId});
     my $data_old = $hash->{helper}{'.delayed'}->{$identiy};
     return respond ($hash, $data->{requestType}, $data->{sessionId}, $data->{siteId}, getResponse( $hash, 'SilentCancelConfirmation')) if !defined $data_old;
 
-    my $identiy = qq($data->{sessionId});
     deleteSingleRegIntTimer($identiy, $hash);
     delete $hash->{helper}{'.delayed'}->{$identiy};
     respond( $hash, $data->{requestType}, $data->{sessionId}, $data->{siteId}, getResponse( $hash, 'DefaultCancelConfirmation' ) );
-    #dialog configure_DialogManager($hash, $data->{siteId}, $toDisable, 'false');
+    configure_DialogManager($hash, $data->{siteId}, $toDisable, 'false') if $hash->{switchDM};#dialog 
 
     return $hash->{NAME};
 }
@@ -3926,8 +3927,8 @@ sub handleIntentConfirmAction {
     my $data_old = $hash->{helper}{'.delayed'}->{$identiy};
     return respond( $hash, $data->{requestType}, $data->{sessionId}, $data->{siteId}, getResponse( $hash, 'DefaultConfirmationNoOutstanding' ) ) if ! defined $data_old;
 
-    #dialog my $toDisable = defined $data_old && defined $data_old->{'.ENABLED'} ? $data_old->{'.ENABLED'} : [qw(ConfirmAction CancelAction)];
-    #dialog configure_DialogManager($hash, $data->{siteId}, $toDisable, 'false');
+    my $toDisable = defined $data_old && defined $data_old->{'.ENABLED'} ? $data_old->{'.ENABLED'} : [qw(ConfirmAction CancelAction)]; #dialog
+    configure_DialogManager($hash, $data->{siteId}, $toDisable, 'false') if $hash->{switchDM}; #dialog
 
     $data_old->{siteId} = $data->{siteId};
     $data_old->{sessionId} = $data->{sessionId};
@@ -4163,6 +4164,18 @@ sub _getDialogueTimeout {
         && defined $hash->{helper}{tweaks}{timeouts}->{$type} 
         && looks_like_number( $hash->{helper}{tweaks}{timeouts}->{$type} );
     return $timeout;
+}
+
+sub _toCleanJSON {
+    my $data = shift // return;
+    
+    return $data if ref $data ne 'HASH';
+    my $json = toJSON($data);
+    
+    $json =~ s{(":"(true|false)")}{": $2}gms;
+    $json =~ s{":"}{": "}gms;
+    $json =~ s{("enable": (?:false|true)),("intentId": "[^"]+")}{$2,$1}gms;
+    return $json;
 }
 
 
