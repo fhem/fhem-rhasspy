@@ -51,6 +51,7 @@
 [Custom Intents](#custom-intents)\
 &nbsp;&nbsp;&nbsp;&nbsp;[99_myUtils.pm](#99_myutilspm)\
 &nbsp;&nbsp;&nbsp;&nbsp;[Larger Intents in a separate File](#larger-intents-in-a-separate-file)\
+[Special Readings](#special-readings)\
 [Tips & Tricks](#tips--tricks)\
 &nbsp;&nbsp;&nbsp;&nbsp;[Custom Converter to use Real numbers](#custom-converter-to-use-real-numbers)\
 &nbsp;&nbsp;&nbsp;&nbsp;[Rhasspy speaks actual state of device after switching it](#rhasspy-speaks-actual-state-of-device-after-switching-it)\
@@ -1186,6 +1187,16 @@ tbd
 
 See [https://github.com/fhem/fhem-rhasspy/blob/dev/FHEM/99_RHASSPY_Utils_Demo.pm](99_RHASSPY_Utils_Demo.pm) for further information.
 
+## Special Readings
+There are some readings you may find useful to tweak some aspects of RHASSPY's logics:
+
+* siteId2room_<siteId>
+  Typically, RHASSPY derives room info from the name of the siteId. So naming a satellite *bedroom* will let RHASSPY assign this satellite to the same room. Using the group scheme is also supported, e.g. *kitchen.front* will refer to *kitchen* as room (if not explicitly given).\
+  You may overwrite this behavior by setting values to siteId2room readings: `setreading siteId2room_mobile_phone1 kitchen` will force RHASSPY to link your satellite _phone1 kitchen_ to kitchen as room.
+* siteId2doubleSpeak_<siteId>
+  RHASSPY will always respond via the satellite where the dialogue was initiated from. In some cases, you may want additional output to other satellites - e.g. if they don't have (always on) sound output options. Setting this type of reading will lead to (additional!) responses to the given second satellite; naming scheme is the same as for site2room.
+
+
 ## Tips & Tricks
 
 ### Custom Converter to use Real numbers
@@ -1245,15 +1256,3 @@ and add a *response* to the *SetOnOff*-Mapping of a device
 ```
 SetOnOff:cmdOn=on,cmdOff=off,response={ResponseOnOff($DEVICE)}
 ```
-
-
-## To-Do
-- [ ] Check and document possibilites of *response* in mappings
-- [ ] As soon as rhasspyName is defined, FHEM-room is ignored? (needs confirmation) (Beta-User: not intended, but rhasspyRoom should override FHEM-room) 
-- [x] Upgrade timer intent to play WAV file, stop existing timer, use times like "one hour and 15 minutes"
-- [x] Move IP of Rhasspy-Master to DEF instead of ATTR
-- [x] Add Custom intents functionality
-- [x] Set-/GetNumeric-Intents multilingual
-- [x] Check MediaControls-Intent. Doesn't look functional. And is german-only too.
-- [x] Add play and volume SET-functions
-- [x] Add timer intent
