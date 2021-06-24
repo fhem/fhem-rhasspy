@@ -1,7 +1,7 @@
 # $Id: 10_RHASSPY.pm 24573 + new respond + $
 ###########################################################################
 #
-# FHEM RHASSPY modul  (https://github.com/rhasspy)
+# FHEM RHASSPY module (https://github.com/rhasspy)
 #
 # Originally written 2018 by Tobias Wiedenmann (Thyraz)
 # as FHEM Snips.ai module (thanks to Matthias Kleine)
@@ -58,7 +58,7 @@ my %sets = (
     textCommand  => [],
     trainRhasspy => [qw(noArg)],
     fetchSiteIds => [qw(noArg)],
-    update       => [qw(devicemap devicemap_only slots slots_no_training language all)],
+    update       => [qw(devicemap devicemap_only slots slots_no_training language intent_filter all)],
     volume       => []
 );
 
@@ -94,6 +94,7 @@ my $languagevars = {
     'DefaultConfirmationReceived' => "ok will do it",
     'DefaultConfirmationNoOutstanding' => "no command is awaiting confirmation",
     'DefaultConfirmationRequest' => 'please confirm switching $device $wanted',
+    'DefaultConfirmationRequestRawInput' => 'please confirm: $rawInput',
     'RequestChoiceDevice' => 'there are several possible devices, choose between $first_items and $last_item',
     'RequestChoiceRoom' => 'more than one possible device, please choose one of the following rooms $first_items and $last_item',
     'DefaultChoiceNoOutstanding' => "no choice expected",
@@ -337,7 +338,7 @@ sub Define {
 
     my @unknown;
     for (keys %{$h}) {
-        push @unknown, $_ if $_ !~ m{\A(?:baseUrl|defaultRoom|language|devspec|fhemId|prefix|encoding|useGenericAttrs|switchDM)\z}xm;
+        push @unknown, $_ if $_ !~ m{\A(?:baseUrl|defaultRoom|language|devspec|fhemId|prefix|encoding|useGenericAttrs)\z}xm;
     }
     my $err = join q{, }, @unknown;
     return "unknown key(s) in DEF: $err" if @unknown && $init_done;
@@ -345,7 +346,7 @@ sub Define {
 
     $hash->{defaultRoom} = $defaultRoom;
     my $language = $h->{language} // shift @{$anon} // lc AttrVal('global','language','en');
-    $hash->{MODULE_VERSION} = '0.4.30';
+    $hash->{MODULE_VERSION} = '0.4.32';
     $hash->{baseUrl} = $Rhasspy;
     initialize_Language($hash, $language) if !defined $hash->{LANGUAGE} || $hash->{LANGUAGE} ne $language;
     $hash->{LANGUAGE} = $language;
@@ -362,7 +363,6 @@ sub Define {
         addToAttrList(q{genericDeviceType});
         #addToAttrList(q{homebridgeMapping});
     }
-    $hash->{switchDM} = $h->{switchDM} if defined $h->{switchDM};
 
     return $init_done ? firstInit($hash) : InternalTimer(time+1, \&firstInit, $hash );
 }
@@ -382,7 +382,7 @@ sub firstInit {
 
     fetchSiteIds($hash) if !ReadingsVal( $name, 'siteIds', 0 );
     initialize_rhasspyTweaks($hash, AttrVal($name,'rhasspyTweaks', undef ));
-    configure_DialogManager($hash);
+    fetchIntents($hash);
     IOWrite($hash, 'subscriptions', join q{ }, @topics) if InternalVal($IODev,'TYPE',undef) eq 'MQTT2_CLIENT';
     initialize_devicemap($hash);
 
@@ -573,11 +573,15 @@ sub Set {
             initialize_devicemap($hash);
             return updateSlots($hash);
         }
+        if ($values[0] eq 'intent_filter') {
+            return fetchIntents($hash);
+        }
         if ($values[0] eq 'all') {
             initialize_Language($hash, $hash->{LANGUAGE});
             initialize_devicemap($hash);
             $hash->{'.needTraining'} = 1;
-            return updateSlots($hash);
+            updateSlots($hash);
+            return fetchIntents($hash);
         }
     }
 
@@ -704,7 +708,7 @@ sub initialize_rhasspyTweaks {
             next;
         }
 
-        if ($line =~ m{\A[\s]*(timeouts|useGenericAttrs|timerSounds)[\s]*=}x) {
+        if ($line =~ m{\A[\s]*(timeouts|useGenericAttrs|timerSounds|confirmIntents)[\s]*=}x) {
             ($tweak, $values) = split m{=}x, $line, 2;
             $tweak = trim($tweak);
             return "Error in $line! No content provided!" if !length $values && $init_done;
@@ -720,14 +724,13 @@ sub initialize_rhasspyTweaks {
 
 sub configure_DialogManager {
     my $hash      = shift // return;
-    #Log3($hash,3,"R-DM for $hash->{NAME} called");
     my $siteId    = shift // 'null'; #ReadingsVal( $hash->{NAME}, 'siteIds', 'default' ) // return;
     my $toDisable = shift // [qw(ConfirmAction CancelAction ChoiceRoom ChoiceDevice)];
     my $enable    = shift // q{false};
     my $timer     = shift;
 
     #option to delay execution to make reconfiguration last action after everything else has been done and published.
-    if ( $timer ) {
+    if ( defined $timer ) {
         
         my $fnHash = resetRegIntTimer( $siteId, time + looks_like_number($timer) ? $timer : 0, \&RHASSPY_configure_DialogManager, $hash, 0);
         $fnHash->{toDisable} = $toDisable;
@@ -736,7 +739,6 @@ sub configure_DialogManager {
     }
 
     #loop for global initialization or for several siteId's
-    #Log3($hash,3,"R-DM - $siteId $toDisable $enable");
     if ( $siteId =~ m{,}xms ) {
         my @siteIds = split m{,}xms, $siteId;
         for (@siteIds) {
@@ -745,6 +747,7 @@ sub configure_DialogManager {
         return;
     }
 
+    my @intents  = split m{,}xm, ReadingsVal( $hash->{NAME}, 'intents', '' );
     my $language = $hash->{LANGUAGE};
     my $fhemId   = $hash->{fhemId};
 
@@ -761,20 +764,27 @@ hermes/dialogueManager/configure (JSON)
     https://rhasspy-hermes-app.readthedocs.io/en/latest/usage.html#continuing-a-session
 =cut
 
+    my $sId = $siteId eq 'null' ? 'null' : qq("$siteId"); 
+
     my @disabled;
+    my $matches = join q{|}, @{$toDisable};
+    for (@intents) {
+        last if $enable eq 'true';
+        next if $_ =~ m{$matches}ms;
+        my $defaults = {intentId => "$_", enable => 'true'} ;
+        push @disabled, $defaults;
+    }
     for (@{$toDisable}) {
         my $id = qq(${language}.${fhemId}:$_);
         my $disable = {intentId => "$id", enable => "$enable"};
         push @disabled, $disable;
     }
-    #my $disable = {intentId => [@disabled], enable => "$enable"};
     my $sendData = {
         siteId  => $siteId,
         intents => [@disabled]
     };
 
     my $json = _toCleanJSON($sendData);
-    #Log3($hash,3,qq{hermes/dialogueManager/configure $json});
 
     IOWrite($hash, 'publish', qq{hermes/dialogueManager/configure $json});
     return;
@@ -964,6 +974,9 @@ sub _analyze_rhassypAttr {
             keys %{$combined} ?
                 $hash->{helper}{devicemap}{devices}{$device}{intents}{SetScene}->{SetScene} = $combined
                 : delete $hash->{helper}{devicemap}{devices}{$device}{intents}->{SetScene};
+        }
+        if ($key eq 'confirm') {
+            $hash->{helper}{devicemap}{devices}{$device}{confirmIntents} = $val;
         }
     }
 
@@ -1208,13 +1221,10 @@ sub RHASSPY_DialogTimeout {
 
     my $data     = shift // $hash->{helper}{'.delayed'}->{$identiy};
     my $siteId = $data->{siteId};
-    #my $toDisable = defined $data->{'.ENABLED'} ? $data->{'.ENABLED'} : [qw(ConfirmAction CancelAction)]; #dialog 
 
     deleteSingleRegIntTimer($identiy, $hash, 1); 
 
     respond( $hash, $data, getResponse( $hash, 'DefaultConfirmationTimeout' ) );
-    #configure_DialogManager($hash, $siteId, $toDisable, 'false') if $hash->{switchDM}; #dialog
-    #configure_DialogManager($hash, $siteId, $data->{'.ENABLED'}, 'false') if $hash->{switchDM}; #dialog II
     delete $hash->{helper}{'.delayed'}{$identiy};
 
     return;
@@ -1247,11 +1257,10 @@ sub setDialogTimeout {
         ? $response
         : { text         => $response, 
             intentFilter => [@ca_strings],
-            sendIntentNotRecognized => 'false',
+            sendIntentNotRecognized => 'true', #'false',
             customData => $data->{customData}
           };
 
-    #configure_DialogManager($hash, $siteId, $toEnable, 'true') if $hash->{switchDM}; #dialog 
     respond( $hash, $data, $reaction );
 
     my $toTrigger = $hash->{'.toTrigger'} // $hash->{NAME};
@@ -1750,6 +1759,41 @@ sub getDevicesByGroup {
     return $devices;
 }
 
+sub getNeedsConfirmation {
+    my $hash   = shift // return;
+    my $data   = shift // return;
+    my $intent = shift // return;
+    my $device = shift;
+
+    my $re = defined $device ? $device : $data->{Group};
+    Log3( $hash, 5, "[$hash->{NAME}] getNeedsConfirmation called, regex is $re" );
+    my $timeout = _getDialogueTimeout($hash);
+    my $response = getResponse($hash, 'DefaultConfirmationRequestRawInput');
+    my $rawInput = $data->{rawInput};
+    $response =~ s{(\$\w+)}{$1}eegx;
+
+    if (defined $hash->{helper}{tweaks} 
+         && defined $hash->{helper}{tweaks}{confirmIntents} 
+         && defined $hash->{helper}{tweaks}{confirmIntents}{$intent} 
+         && $hash->{helper}{tweaks}{confirmIntents}{$intent} =~ m{\b$re(?:[,]|\Z)}i ) { ##no critic qw(RequireExtendedFormatting)
+        Log3( $hash, 5, "[$hash->{NAME}] getNeedsConfirmation is true for tweak, response is $response" );
+        setDialogTimeout($hash, $data, $timeout, $response);
+        return 1;
+    }
+
+    return if !defined $device;
+
+    my $confirm = $hash->{helper}{devicemap}{devices}{$device}->{confirmIntents};
+    return if !defined $confirm;
+    if ( $confirm->{$intent} =~ m{\b$intent(?:[,]|\Z)}i ) { ##no critic qw(RequireExtendedFormatting)
+        Log3( $hash, 5, "[$hash->{NAME}] getNeedsConfirmation is true on device level" );
+        setDialogTimeout($hash, $data, $timeout, $response);
+        return 1;
+    }
+
+    return;
+}
+
 
 # Mappings in Key/Value Paare aufteilen
 sub splitMappingString {
@@ -2158,7 +2202,6 @@ sub analyzeMQTTmessage {
             my $data_old = $hash->{helper}{'.delayed'}->{$identiy};
             if (defined $data_old) {
                 $data->{text} = getResponse( $hash, 'DefaultCancelConfirmation' );
-                #_resetDialogueFilter( $hash, $data_old, $data );
                 $data->{intentFilter} = 'null' if !defined $data->{intentFilter}; #dialog II
                 sendTextCommand( $hash, $data );
                 delete $hash->{helper}{'.delayed'}{$identiy};
@@ -2239,11 +2282,7 @@ sub respond {
         }
     } else {
         $sendData->{text} = $response;
-        #if ( defined $data->{'.ENABLED'} ) { 
-            $sendData->{intentFilter} = 'null';
-            configure_DialogManager($hash, $data->{siteId}, $data->{'.ENABLED'}, 'false', 1 ) if $hash->{switchDM}; #dialog II
-        #}
-    
+        $sendData->{intentFilter} = 'null';
     }
 
     my $json = _toCleanJSON($sendData);
@@ -2325,7 +2364,8 @@ sub sendSpeakCommand {
     my $sendData =  { 
         init => {
             type          => 'notification',
-            canBeEnqueued => 'true'
+            canBeEnqueued => 'true',
+            customData    => "$hash->{LANGUAGE}.$hash->{fhemId}"
         }
     };
     if (ref $cmd eq 'HASH') {
@@ -2541,6 +2581,16 @@ sub fetchSiteIds {
     return _sendToApi($hash, $url, $method, undef);
 }
 
+# Use the HTTP-API to fetch all available siteIds
+sub fetchIntents {
+    my $hash   = shift // return;
+    my $url    = q{/api/intents};
+    my $method = q{GET};
+
+    Log3($hash->{NAME}, 5, 'fetchIntents called');
+    return _sendToApi($hash, $url, $method, undef);
+}
+
 =pod
 # Check connection to HTTP-API
 # Seems useless, because fetchSiteIds is called after DEF
@@ -2625,6 +2675,16 @@ sub RHASSPY_ParseHttpResponse {
         #my $ref = decode_json($data);
         my $siteIds = encode($cp,$ref->{dialogue}{satellite_site_ids});
         readingsBulkUpdate($hash, 'siteIds', $siteIds);
+    }
+    elsif ( $url =~ m{api/intents}ix ) {
+        my $refb; 
+        if ( !eval { $refb = decode_json($data) ; 1 } ) {
+            readingsEndUpdate($hash, 1);
+            return Log3($hash->{NAME}, 1, "JSON decoding error: $@");
+        }
+        my $intents = encode($cp,join q{,}, keys %{$refb});
+        readingsBulkUpdate($hash, 'intents', $intents);
+        configure_DialogManager($hash);
     }
     else {
         Log3($name, 3, qq(error while requesting $param->{url} - $data));
@@ -2820,6 +2880,9 @@ sub handleIntentSetOnOffGroup {
     Log3($hash->{NAME}, 5, "handleIntentSetOnOffGroup called");
 
     return respond( $hash, $data, getResponse($hash, 'NoValidData') ) if !defined $data->{Value}; 
+
+    #check if confirmation is required
+    return $hash->{NAME} if !$data->{Confirmation} && getNeedsConfirmation( $hash, $data, 'SetOnOffGroup' );
 
     my $devices = getDevicesByGroup($hash, $data);
 
@@ -3990,15 +4053,12 @@ sub handleIntentCancelAction {
     my $data_old = $hash->{helper}{'.delayed'}->{$identiy};
     if ( !defined $data_old ) {
         respond( $hash, $data, getResponse( $hash, 'SilentCancelConfirmation' ) );
-        #configure_DialogManager( $hash, $data->{siteId} ) if $hash->{switchDM}; #dialog II
         return;
     }
 
     deleteSingleRegIntTimer($identiy, $hash);
     delete $hash->{helper}{'.delayed'}->{$identiy};
     respond( $hash, $data, getResponse( $hash, 'DefaultCancelConfirmation' ) );
-    #configure_DialogManager($hash, $data->{siteId}, $toDisable, 'false') if $hash->{switchDM};#dialog 
-    #configure_DialogManager($hash, $data->{siteId}, $data->{'.ENABLED'}, 'false') if $hash->{switchDM};
 
     return $hash->{NAME};
 }
@@ -4021,7 +4081,6 @@ sub handleIntentConfirmAction {
 
     if ( !defined $data_old ) {
         respond( $hash, $data, getResponse( $hash, 'DefaultConfirmationNoOutstanding' ) );
-        #configure_DialogManager( $hash, $data->{siteId} ) if $hash->{switchDM}; #dialog II
         return;
     };
 
@@ -4037,9 +4096,6 @@ sub handleIntentConfirmAction {
     if (ref $dispatchFns->{$intent} eq 'CODE') {
         $device = $dispatchFns->{$intent}->($hash, $data_old);
     }
-    #my $toDisable = defined $data_old->{'.ENABLED'} ? $data_old->{'.ENABLED'} : [qw(ConfirmAction CancelAction )]; #dialog
-    #configure_DialogManager($hash, $data->{siteId}, $toDisable, 'false') if $hash->{switchDM}; #dialog
-    #configure_DialogManager($hash, $data->{siteId}, $data_old->{'.ENABLED'}, 'false') if $hash->{switchDM}; #dialog II
     delete $hash->{helper}{'.delayed'}{$identiy};
 
     return $device;
@@ -4406,7 +4462,7 @@ When changing something relevant within FHEM for either the data structure in</p
 <ul>
   <li>
     <a id="RHASSPY-set-update"></a><b>update</b>
-    <p>Choose between one of the following:</p>
+    <p>Various options to update settings and data structures used by RHASSPY and/or Rhasspy. Choose between one of the following:</p>
     <ul>
       <li><b>devicemap</b><br>
       When having finished the configuration work to RHASSPY and the subordinated devices, issuing a devicemap-update is mandatory, to get the RHASSPY data structure updated, inform Rhasspy on changes that may have occured (update slots) and initiate a training on updated slot values etc., see <a href="#RHASSPY-list">remarks on data structure above</a>.
@@ -4424,8 +4480,11 @@ When changing something relevant within FHEM for either the data structure in</p
       Reinitialization of language file.<br>
       Be sure to execute this command after changing something within in the language configuration file!<br>
       </li>
+      <li><b>intent_filter</b><br>
+      Reset intent filter used by Rhasspy dialogue manager<br>
+      </li>
       <li><b>all</b><br>
-      Surprise: means language file and full update to RHASSPY and Rhasspy including training.
+      Surprise: means language file and full update to RHASSPY and Rhasspy including training and intent filter.
       </li>
     </ul>
     <p>Example: <code>set &lt;rhasspyDevice&gt; update language</code></p>
