@@ -304,6 +304,7 @@ my @topics = qw(
     hermes/intent/+
     hermes/dialogueManager/sessionStarted
     hermes/dialogueManager/sessionEnded
+    hermes/nlu/intentNotRecognized
 );
 
 sub Initialize {
@@ -346,7 +347,7 @@ sub Define {
 
     $hash->{defaultRoom} = $defaultRoom;
     my $language = $h->{language} // shift @{$anon} // lc AttrVal('global','language','en');
-    $hash->{MODULE_VERSION} = '0.4.32';
+    $hash->{MODULE_VERSION} = '0.4.33';
     $hash->{baseUrl} = $Rhasspy;
     initialize_Language($hash, $language) if !defined $hash->{LANGUAGE} || $hash->{LANGUAGE} ne $language;
     $hash->{LANGUAGE} = $language;
@@ -717,8 +718,24 @@ sub initialize_rhasspyTweaks {
             $hash->{helper}{tweaks}{$tweak} = $namedParams;
             next;
         }
+        if ($line =~ m{\A[\s]*(intentFilter)[\s]*=}x) {
+            ($tweak, $values) = split m{=}x, $line, 2;
+            $tweak = trim($tweak);
+            return "Error in $line! No content provided!" if !length $values && $init_done;
+            my($unnamedParams, $namedParams) = parseParams($values);
+            return "Error in $line! Provide at least one item!" if ( !@{$unnamedParams} && !keys %{$namedParams} ) && $init_done;
+            for ( @{$unnamedParams} ) {
+                $namedParams->{$_} = 'false';
+            }
+            for ( keys %{$namedParams} ) {
+                $namedParams->{$_} = 'false' if $namedParams->{$_} ne 'false' && $namedParams->{$_} ne 'true';
+            }
+            $hash->{helper}{tweaks}{$tweak} = $namedParams;
+            next;
+        }
 
     }
+    return configure_DialogManager($hash) if $init_done;
     return;
 }
 
@@ -772,6 +789,7 @@ hermes/dialogueManager/configure (JSON)
         last if $enable eq 'true';
         next if $_ =~ m{$matches}ms;
         my $defaults = {intentId => "$_", enable => 'true'} ;
+        $defaults = {intentId => "$_", enable => $hash->{helper}{tweaks}->{intentFilter}->{$_}} if defined $hash->{helper}->{tweaks} && defined $hash->{helper}{tweaks}->{intentFilter} && defined $hash->{helper}{tweaks}->{intentFilter}->{$_};
         push @disabled, $defaults;
     }
     for (@{$toDisable}) {
@@ -1233,7 +1251,7 @@ sub RHASSPY_DialogTimeout {
 sub setDialogTimeout {
     my $hash     = shift // return;
     my $data     = shift // return;
-    my $timeout  = shift;
+    my $timeout  = shift // _getDialogueTimeout($hash);
     my $response = shift;
     my $toEnable = shift // [qw(ConfirmAction CancelAction)];
 
@@ -2096,7 +2114,7 @@ sub Parse {
         # Name mit IODev vergleichen
         next if $ioname ne AttrVal($hash->{NAME}, 'IODev', ReadingsVal($hash->{NAME}, 'IODev', InternalVal($hash->{NAME}, 'IODev', 'none')));
         next if IsDisabled( $hash->{NAME} );
-        my $topicpart = qq{/$hash->{LANGUAGE}\.$hash->{fhemId}\[._]|hermes/dialogueManager};
+        my $topicpart = qq{/$hash->{LANGUAGE}\.$hash->{fhemId}\[._]|hermes/dialogueManager|hermes/nlu/intentNotRecognized};
         next if $topic !~ m{$topicpart}x;
 
         Log3($hash,5,"RHASSPY: [$hash->{NAME}] Parse (IO: ${ioname}): Msg: $topic => $value");
@@ -2229,6 +2247,11 @@ sub analyzeMQTTmessage {
         #Beta-User: Da fehlt mir der Soll-Ablauf für das "room-listening"-Reading; das wird ja über einen anderen Topic abgewickelt
         return \@updatedList;
     }
+    
+    if ($topic =~ m{\Ahermes/nlu/intentNotRecognized}x && defined $siteId) {
+        handleIntentNotRecognized($hash, $data);
+        return;
+    }
 
     my $command = $data->{input};
     $type = $message =~ m{${fhemId}.textCommand}x ? 'text' : 'voice';
@@ -2286,6 +2309,7 @@ sub respond {
     }
 
     my $json = _toCleanJSON($sendData);
+    $response = $response->{text} if ref $response eq 'HASH' && defined $response->{text};
     $response = $response->{response} if ref $response eq 'HASH' && defined $response->{response};
     readingsBeginUpdate($hash);
     $type eq 'voice' ?
@@ -2295,7 +2319,7 @@ sub respond {
     readingsEndUpdate($hash,1);
     IOWrite($hash, 'publish', qq{hermes/dialogueManager/$topic $json});
     Log3($hash->{NAME}, 5, "Response is: $response");
-    
+
     my $secondAudio = ReadingsVal($hash->{NAME}, "siteId2doubleSpeak_$data->{siteId}",0);
     sendSpeakCommand( $hash, { 
             siteId => $secondAudio, 
@@ -4041,6 +4065,24 @@ sub handleIntentSetTimer {
 }
 
 
+sub handleIntentNotRecognized {
+    my $hash = shift // return;
+    my $data = shift // return;
+
+    Log3( $hash, 5, "[$hash->{NAME}] handleIntentNotRecognized called, input is $data->{input}" );
+    my $identiy = qq($data->{sessionId});
+    my $data_old = $hash->{helper}{'.delayed'}->{$identiy};
+    return if !defined $data_old;
+    $hash->{helper}{'.delayed'}->{$identiy}->{intentNotRecognized} = $data;
+    Log3( $hash->{NAME}, 5, "data_old is: " . toJSON( $hash->{helper}{'.delayed'}->{$identiy} ) );
+    my $response = getResponse($hash, 'DefaultConfirmationRequestRawInput');
+    my $rawInput = $data->{input};
+    $response =~ s{(\$\w+)}{$1}eegx;
+
+    return setDialogTimeout( $hash, $data, undef, $response ); # , $data_old->{intentNotRecognized} );
+
+}
+
 sub handleIntentCancelAction {
     my $hash = shift // return;
     my $data = shift // return;
@@ -4053,7 +4095,7 @@ sub handleIntentCancelAction {
     my $data_old = $hash->{helper}{'.delayed'}->{$identiy};
     if ( !defined $data_old ) {
         respond( $hash, $data, getResponse( $hash, 'SilentCancelConfirmation' ) );
-        return;
+        return configure_DialogManager( $hash, $data->{siteId}, undef, undef, 1 ); #global intent filter seems to be not working!
     }
 
     deleteSingleRegIntTimer($identiy, $hash);
@@ -4071,7 +4113,7 @@ sub handleIntentConfirmAction {
     Log3($hash->{NAME}, 5, 'handleIntentConfirmAction called');
 
     #cancellation case
-    return handleIntentCancelAction($hash, $data) if $data->{Mode} ne 'OK';
+    return handleIntentCancelAction($hash, $data) if $data->{Mode} ne 'OK' && $data->{Mode} ne 'Back' && $data->{Mode} ne 'Next' ;
 
     #confirmed case
     my $identiy = qq($data->{sessionId});
@@ -4081,6 +4123,16 @@ sub handleIntentConfirmAction {
 
     if ( !defined $data_old ) {
         respond( $hash, $data, getResponse( $hash, 'DefaultConfirmationNoOutstanding' ) );
+        return configure_DialogManager( $hash, $data->{siteId}, undef, undef, 1 ); #global intent filter seems to be not working!;
+    };
+
+    #continued session after intentNotRecognized
+    if ( defined $data_old->{intentNotRecognized} && ( $data->{Mode} eq 'OK' || $data->{Mode} eq 'Back') ) {
+        Log3($hash->{NAME}, 5, "ConfirmAction in $data->{Mode}");
+        #$hash->{helper}{'.delayed'}->{$identiy}->{intentNotRecognized} = $data;
+        #respond( $hash, $data, getResponse( $hash, 'DefaultConfirmationNoOutstanding' ) );
+        #return configure_DialogManager( $hash, $data->{siteId}, undef, undef, 1 ); #global intent filter seems to be not working!;
+        #atm no idea, how to continue...
         return;
     };
 
@@ -4435,7 +4487,7 @@ So all parameters in define should be provided in the <i>key=value</i> form. In 
 <p><b>Example for defining an MQTT2_CLIENT device and the Rhasspy device in FHEM:</b></p>
 <p><code>defmod rhasspyMQTT2 MQTT2_CLIENT 192.168.1.122:12183<br>
 attr rhasspyMQTT2 clientOrder RHASSPY MQTT_GENERIC_BRIDGE MQTT2_DEVICE<br>
-attr rhasspyMQTT2 subscriptions hermes/intent/+ hermes/dialogueManager/sessionStarted hermes/dialogueManager/sessionEnded</code></p>
+attr rhasspyMQTT2 subscriptions hermes/intent/+ hermes/dialogueManager/sessionStarted hermes/dialogueManager/sessionEnded hermes/nlu/intentNotRecognized</code></p>
 <p><code>define Rhasspy RHASSPY devspec=room=Rhasspy defaultRoom=Livingroom language=en</code></p>
 
 <p><b>Additionals remarks on MQTT2-IOs:</b></p>
@@ -4481,7 +4533,7 @@ When changing something relevant within FHEM for either the data structure in</p
       Be sure to execute this command after changing something within in the language configuration file!<br>
       </li>
       <li><b>intent_filter</b><br>
-      Reset intent filter used by Rhasspy dialogue manager<br>
+      Reset intent filter used by Rhasspy dialogue manager. See <a href="#RHASSPY-intentFilter">intentFilter</a> in <i>rhasspyTweaks</i> attribute for details.<br>
       </li>
       <li><b>all</b><br>
       Surprise: means language file and full update to RHASSPY and Rhasspy including training and intent filter.
@@ -4628,7 +4680,7 @@ i="i am hungry" f="set Stove on" d="Stove" c="would you like roast pork"</code><
       </ul></li>
     </ul>
   </li>
-
+  <br>
   <li>
     <a id="RHASSPY-attr-rhasspyTweaks"></a><b>rhasspyTweaks</b>
     <p>Currently sets additional settings for timers and slot-updates to Rhasspy. May contain further custom settings in future versions like siteId2room info or code links, allowed commands, confirmation requests etc.</p>
@@ -4659,7 +4711,10 @@ i="i am hungry" f="set Stove on" d="Stove" c="would you like roast pork"</code><
         <p>Example:</p>
         <p><code>timeouts: confirm=25 default=30</code></p>
       </li>
-
+      <a id="RHASSPY-attr-rhasspyTweaks-intentFilter"></a>
+      <li><b>intentFilter</b>
+        <p>Atm. Rhasspy will activate all known intents at startup. As some of the intents used by FHEM are only needed in case some dialogue is open, it will deactivate these intents (atm: <i>ConfirmAction, CancelAction, ChoiceRoom</i> and <i>ChoiceDevice</i>) at startup or when no active filtering is detected. You may disable additional intents by just adding their names in <i>intentFilter</i> line or using an explicit state assignment in the form <i>intentname=true</i> (e.g. also to keep intents enabled that otherwise would get disabled by default). For details on how <i>configure</i> works see <a href="https://rhasspy.readthedocs.io/en/latest/reference/#dialogue-manager">Rhasspy documentation</a>.
+      </li>
     </ul>
   </li>
 
