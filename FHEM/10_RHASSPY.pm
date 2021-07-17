@@ -347,7 +347,7 @@ sub Define {
 
     $hash->{defaultRoom} = $defaultRoom;
     my $language = $h->{language} // shift @{$anon} // lc AttrVal('global','language','en');
-    $hash->{MODULE_VERSION} = '0.4.33';
+    $hash->{MODULE_VERSION} = '0.4.35';
     $hash->{baseUrl} = $Rhasspy;
     initialize_Language($hash, $language) if !defined $hash->{LANGUAGE} || $hash->{LANGUAGE} ne $language;
     $hash->{LANGUAGE} = $language;
@@ -432,13 +432,13 @@ sub initialize_prefix {
 
     return if defined $old_prefix && $prefix eq $old_prefix;
     # provide attributes "rhasspyName" etc. for all devices
-    addToAttrList("${prefix}Name");
-    addToAttrList("${prefix}Room");
-    addToAttrList("${prefix}Mapping:textField-long");
+    addToAttrList("${prefix}Name",'RHASSPY');
+    addToAttrList("${prefix}Room",'RHASSPY');
+    addToAttrList("${prefix}Mapping:textField-long",'RHASSPY');
     #addToAttrList("${prefix}Channels:textField-long");
     #addToAttrList("${prefix}Colors:textField-long");
-    addToAttrList("${prefix}Group:textField");
-    addToAttrList("${prefix}Specials:textField-long");
+    addToAttrList("${prefix}Group:textField",'RHASSPY');
+    addToAttrList("${prefix}Specials:textField-long",'RHASSPY');
 
     return if !$init_done || !defined $old_prefix;
     my @devs = devspec2array("$hash->{devspec}");
@@ -1266,6 +1266,7 @@ sub setDialogTimeout {
 
     #interactive dialogue as described in https://rhasspy.readthedocs.io/en/latest/reference/#dialoguemanager_continuesession and https://docs.snips.ai/articles/platform/dialog/multi-turn-dialog
     my @ca_strings;
+    $toEnable = split m{,}, $toEnable if ref $toEnable ne 'ARRAY';
     for (@{$toEnable}) {
         my $id = qq{$hash->{LANGUAGE}.$hash->{fhemId}:$_};
         push @ca_strings, $id;
@@ -4078,9 +4079,9 @@ sub handleIntentNotRecognized {
     my $response = getResponse($hash, 'DefaultConfirmationRequestRawInput');
     my $rawInput = $data->{input};
     $response =~ s{(\$\w+)}{$1}eegx;
+    $data_old->{customData} = 'intentNotRecognized';
 
-    return setDialogTimeout( $hash, $data, undef, $response ); # , $data_old->{intentNotRecognized} );
-
+    return setDialogTimeout( $hash, $data_old, undef, $response ); # , $data_old->{intentNotRecognized} );
 }
 
 sub handleIntentCancelAction {
@@ -4647,8 +4648,15 @@ DefaultConfirmation=Klaro, mach ich</code></p>
     <li>DATA => entire JSON-$data (as parsed internally), encoded in JSON</li>
     <li>siteId, Device etc. => any element out of the JSON-$data.</li>
     </ul>
-    <p>If a simple text is returned, this will be considered as response.<br>
-    For more advanced use of this feature, you may return an array. First element of the array will be interpreted as comma-separated list of devices that may have been modified (otherwise, these devices will not cast any events! See also the "d" parameter in <a href="#RHASSPY-attr-rhasspyShortcuts"><i>rhasspyShortcuts</i></a>). The second element is interpreted as response and may either be simple text or HASH-type data. This will keep the dialogue-session open to allow interactive data exchange with <i>Rhasspy</i>. An open dialogue will be closed after some time, default is 20 seconds, you may alternatively hand over other numeric values as third element of the array.<br>See also <a href="#RHASSPY-additional-files">additionals files</a> for further examples on this.</p>
+    <p>If a simple text is returned, this will be considered as response, if return value is not defined, the default response will be used.<br>
+    For more advanced use of this feature, you may return either a HASH or an ARRAY data structure. If ARRAY is returned:
+    <ul><li>First element of the array is interpreted as response and may be plain text (dialog will be ended) or HASH type to continue the session. The latter will keep the dialogue-session open to allow interactive data exchange with <i>Rhasspy</i>. An open dialogue will be closed after some time, (configurable) default is 20 seconds, you may alternatively hand over other numeric values as second element of the array.
+    </li>
+    <li>Second element might either be a comma-separated list of devices that may have been modified (otherwise, these devices will not cast any events! See also the "d" parameter in <a href="#RHASSPY-attr-rhasspyShortcuts"><i>rhasspyShortcuts</i></a>), or (if first element is HASH type) a nummeric value as timeout.</li> 
+    <li>If HASH type data (or $response in ARRAY) is returned to continue a session, make sure to hand over all relevant elements, including especially <i>intentFilter</i> if you want to restrict possible intents. It's recommended to always also activate <i>CancelAction</i> to allow user to actively exit the dialoge.
+    </li>
+    </ul>
+    <br>See also <a href="#RHASSPY-additional-files">additionals files</a> for further examples on this.</p>
   </li>
 
   <li>
@@ -4713,7 +4721,7 @@ i="i am hungry" f="set Stove on" d="Stove" c="would you like roast pork"</code><
       </li>
       <a id="RHASSPY-attr-rhasspyTweaks-intentFilter"></a>
       <li><b>intentFilter</b>
-        <p>Atm. Rhasspy will activate all known intents at startup. As some of the intents used by FHEM are only needed in case some dialogue is open, it will deactivate these intents (atm: <i>ConfirmAction, CancelAction, ChoiceRoom</i> and <i>ChoiceDevice</i>) at startup or when no active filtering is detected. You may disable additional intents by just adding their names in <i>intentFilter</i> line or using an explicit state assignment in the form <i>intentname=true</i> (e.g. also to keep intents enabled that otherwise would get disabled by default). For details on how <i>configure</i> works see <a href="https://rhasspy.readthedocs.io/en/latest/reference/#dialogue-manager">Rhasspy documentation</a>.
+        <p>Atm. Rhasspy will activate all known intents at startup. As some of the intents used by FHEM are only needed in case some dialogue is open, it will deactivate these intents (atm: <i>ConfirmAction, CancelAction, ChoiceRoom</i> and <i>ChoiceDevice</i>(including the additional parts derived from language and fhemId))) at startup or when no active filtering is detected. You may disable additional intents by just adding their names in <i>intentFilter</i> line or using an explicit state assignment in the form <i>intentname=true</i> (Note: activating the 4 mentionned intents is not possible!). For details on how <i>configure</i> works see <a href="https://rhasspy.readthedocs.io/en/latest/reference/#dialogue-manager">Rhasspy documentation</a>.
       </li>
     </ul>
   </li>
@@ -4736,25 +4744,25 @@ Each of the keywords found in these attributes will be sent by <a href="#RHASSPY
 
 <ul>
   <li>
-    <a id="RHASSPY-attr-rhasspyName"></a><b>rhasspyName</b>
+    <a id="RHASSPY-attr-rhasspyName" data-pattern=".*Name"></a><b>rhasspyName</b>
     <p>Comma-separated "labels" for the device as used when speaking a voice-command. They will be used as keywords by Rhasspy. May contain space or mutated vovels.</p>
     <p>Example:<br>
     <code>attr m2_wz_08_sw rhasspyName kitchen lamp,ceiling lamp,workspace,whatever</code></p>
   </li>
   <li>
-    <a id="RHASSPY-attr-rhasspyRoom"></a><b>rhasspyRoom</b>
+    <a id="RHASSPY-attr-rhasspyRoom" data-pattern=".*Room"></a><b>rhasspyRoom</b>
     <p>Comma-separated "labels" for the "rooms" the device is located in. Recommended to be unique.</p>
     <p>Example:<br>
     <code>attr m2_wz_08_sw rhasspyRoom living room</code></p>
   </li>
   <li>
-    <a id="RHASSPY-attr-rhasspyGroup"></a><b>rhasspyGroup</b>
+    <a id="RHASSPY-attr-rhasspyGroup" data-pattern=".*Group"></a><b>rhasspyGroup</b>
     <p>Comma-separated "labels" for the "groups" the device is in. Recommended to be unique.</p>
     <p>Example:
     <code>attr m2_wz_08_sw rhasspyGroup lights</code></p>
   </li>
   <li>
-    <a id="RHASSPY-attr-Mapping"></a><b>rhasspyMapping</b>
+    <a id="RHASSPY-attr-Mapping" data-pattern=".*Mapping"></a><b>rhasspyMapping</b>
     <p>If automatic detection (gDT) does not work or is not desired, this is the place to tell RHASSPY how your device can be controlled.</p>
     <p>Example:</p>
     <p><code>attr lamp rhasspyMapping SetOnOff:cmdOn=on,cmdOff=off,response="All right"<br>
@@ -4765,7 +4773,7 @@ GetState:response=The temperature in the kitchen is at [lamp:temperature] degree
 MediaControls:cmdPlay=play,cmdPause=pause,cmdStop=stop,cmdBack=previous,cmdFwd=next</code></p>
   </li>
   <li>
-    <a id="RHASSPY-attr-rhasspyChannels"></a><b>rhasspyChannels</b>
+    <a id="RHASSPY-attr-rhasspyChannels" data-pattern=".*Channels"></a><b>rhasspyChannels</b>
     <p>Used to change the channels of a tv, set light-scenes, etc.<br>
     <i>key=value</i> line by line arguments mapping command strings to fhem- or Perl commands.</p>
     <p>Example:</p>
@@ -4776,7 +4784,7 @@ orf drei=channel 203<br>
     <p>Note: This attribute is not added to global attribute list by default. Add it using userattr or by editing the global userattr attribute.</p>
   </li>
   <li>
-    <a id="RHASSPY-attr-rhasspyColors"></a><b>rhasspyColors</b>
+    <a id="RHASSPY-attr-rhasspyColors" data-pattern=".*Colors"></a><b>rhasspyColors</b>
     <p>Used to change to colors of a light<br>
     <i>key=value</i> line by line arguments mapping keys to setter strings on the same device.</p>
     <p>Example:</p>
@@ -4787,7 +4795,7 @@ yellow=rgb FFFF00</code></p>
     <p>Note: This attribute is not added to global attribute list by default. Add it using userattr or by editing the global userattr attribute. You may consider using <a href="#RHASSPY-attr-rhasspySpecials">rhasspySpecials</a> (<i>colorCommandMap</i> and/or <i>colorForceHue2rgb</i>) instead.</p>
   </li>
   <li>
-    <a id="RHASSPY-attr-rhasspySpecials"></a><b>rhasspySpecials</b>
+    <a id="RHASSPY-attr-rhasspySpecials" data-pattern=".*Specials"></a><b>rhasspySpecials</b>
     <p>Currently some colour light options besides group and venetian blind related stuff is implemented, this could be the place to hold additional options, e.g. for confirmation requests. You may use several of the following lines.</p>
     <p><i>key:value</i> line by line arguments similar to <a href="#RHASSPY-attr-rhasspyTweaks">rhasspyTweaks</a>.</p>
     <ul>
