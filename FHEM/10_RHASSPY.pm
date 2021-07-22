@@ -347,7 +347,7 @@ sub Define {
 
     $hash->{defaultRoom} = $defaultRoom;
     my $language = $h->{language} // shift @{$anon} // lc AttrVal('global','language','en');
-    $hash->{MODULE_VERSION} = '0.4.35';
+    $hash->{MODULE_VERSION} = '0.4.36';
     $hash->{baseUrl} = $Rhasspy;
     initialize_Language($hash, $language) if !defined $hash->{LANGUAGE} || $hash->{LANGUAGE} ne $language;
     $hash->{LANGUAGE} = $language;
@@ -2277,6 +2277,8 @@ sub analyzeMQTTmessage {
         push @updatedList, $_ if $defs{$_}; 
     }
 
+    Log3($hash, 4, "[$name] dispatch result is @updatedList" );
+
     return \@updatedList;
 }
 
@@ -2839,7 +2841,7 @@ sub handleIntentShortcuts {
         $cmd = qq({$cmd}) if ($cmd !~ m{\A\{.*\}\z}x); 
 
         $ret = analyzeAndRunCmd($hash, undef, $cmd, undef, $data->{siteId});
-        $device = $ret if $ret && $ret !~ m{Please.define.*first}x;
+        $device = $ret if $ret && $ret !~ m{Please.define.*first}x && !defined $device;
 
         $response = $ret // _replace($hash, $response, \%specials);
     } elsif ( defined $shortcut->{fhem} ) {
@@ -4678,7 +4680,7 @@ i="i am hungry" f="set Stove on" d="Stove" c="would you like roast pork"</code><
       Syntax as usual in FHEMWEB command field.</li>
       <li><b>p</b> => Perl command<br>
       Syntax as usual in FHEMWEB command field, enclosed in {}; this has priority to "f=".</li>
-      <li><b>d</b> => device name(s, comma separated) that shall be handed over to fhem.pl as updated. Needed for triggering further actions and longpoll! If not set, the return value of the called function will be used. </li>
+      <li><b>d</b> => device name(s, comma separated) that shall be handed over to fhem.pl as updated. Needed for triggering further actions and longpoll! Note: When calling Perl functions, the return value of the called function will be used if no explicit device is provided. </li>
       <li><b>r</b> => Response to be send to the caller. If not set, the return value of the called function will be used.<br>
       Response sentence will be parsed to do "set magic"-like replacements, so also a line like <code>i="what's the time for sunrise" r="at [Astro:SunRise] o'clock"</code> is valid.<br>
       You may ask for confirmation as well using the following (optional) shorts:
