@@ -1,4 +1,4 @@
-# $Id: 10_RHASSPY.pm 24573 + new respond + $
+# $Id: 10_RHASSPY.pm 24786 2021-07-22 + Beta-User$
 ###########################################################################
 #
 # FHEM RHASSPY module (https://github.com/rhasspy)
@@ -93,7 +93,6 @@ my $languagevars = {
     'SilentCancelConfirmation' => "",
     'DefaultConfirmationReceived' => "ok will do it",
     'DefaultConfirmationNoOutstanding' => "no command is awaiting confirmation",
-    'DefaultConfirmationRequest' => 'please confirm switching $device $wanted',
     'DefaultConfirmationRequestRawInput' => 'please confirm: $rawInput',
     'RequestChoiceDevice' => 'there are several possible devices, choose between $first_items and $last_item',
     'RequestChoiceRoom' => 'more than one possible device, please choose one of the following rooms $first_items and $last_item',
@@ -347,7 +346,7 @@ sub Define {
 
     $hash->{defaultRoom} = $defaultRoom;
     my $language = $h->{language} // shift @{$anon} // lc AttrVal('global','language','en');
-    $hash->{MODULE_VERSION} = '0.4.36';
+    $hash->{MODULE_VERSION} = '0.4.38';
     $hash->{baseUrl} = $Rhasspy;
     initialize_Language($hash, $language) if !defined $hash->{LANGUAGE} || $hash->{LANGUAGE} ne $language;
     $hash->{LANGUAGE} = $language;
@@ -709,7 +708,7 @@ sub initialize_rhasspyTweaks {
             next;
         }
 
-        if ($line =~ m{\A[\s]*(timeouts|useGenericAttrs|timerSounds|confirmIntents)[\s]*=}x) {
+        if ($line =~ m{\A[\s]*(timeouts|useGenericAttrs|timerSounds|confirmIntents|confirmIntentResponses)[\s]*=}x) {
             ($tweak, $values) = split m{=}x, $line, 2;
             $tweak = trim($tweak);
             return "Error in $line! No content provided!" if !length $values && $init_done;
@@ -945,9 +944,13 @@ sub _analyze_rhassypAttr {
     for my $line (@lines) {
         my ($key, $val) = split m{:}x, $line, 2;
         next if !$val; 
-        
+
+        if ($key eq 'colorForceHue2rgb') {
+            $hash->{helper}{devicemap}{devices}{$device}{color_specials}{forceHue2rgb} = $val;
+        }
+
+        my($unnamed, $named) = parseParams($val);
         if ($key eq 'group') {
-            my($unnamed, $named) = parseParams($val);
             my $specials = {};
             my $partOf = $named->{partOf} // shift @{$unnamed};
             $specials->{partOf} = $partOf if defined $partOf;
@@ -956,19 +959,13 @@ sub _analyze_rhassypAttr {
 
             $hash->{helper}{devicemap}{devices}{$device}{group_specials} = $specials;
         }
-        if ($key eq 'colorForceHue2rgb') {
-            $hash->{helper}{devicemap}{devices}{$device}{color_specials}{forceHue2rgb} = $val;
-        }
         if ($key eq 'colorCommandMap') {
-            my($unnamed, $named) = parseParams($val);
             $hash->{helper}{devicemap}{devices}{$device}{color_specials}{CommandMap} = $named if defined $named;
         }
         if ($key eq 'colorTempMap') {
-            my($unnamed, $named) = parseParams($val);
             $hash->{helper}{devicemap}{devices}{$device}{color_specials}{Colortemp} = $named if defined $named;
         }
         if ($key eq 'venetianBlind') {
-            my($unnamed, $named) = parseParams($val);
             my $specials = {};
             my $vencmd = $named->{setter} // shift @{$unnamed};
             my $vendev = $named->{device} // shift @{$unnamed};
@@ -979,12 +976,10 @@ sub _analyze_rhassypAttr {
             $hash->{helper}{devicemap}{devices}{$device}{venetian_specials} = $specials if defined $vencmd || defined $vendev;
         }
         if ($key eq 'priority') {
-            my($unnamed, $named) = parseParams($val);
             $hash->{helper}{devicemap}{devices}{$device}{prio}{inRoom} = $named->{inRoom} if defined $named->{inRoom};
             $hash->{helper}{devicemap}{devices}{$device}{prio}{outsideRoom} = $named->{outsideRoom} if defined $named->{outsideRoom};
         }
         if ( $key eq 'scenes' && defined $hash->{helper}{devicemap}{devices}{$device}{intents}{SetScene} ) {
-            my($unnamed, $named) = parseParams($val);
             my $combined = _combineHashes( $hash->{helper}{devicemap}{devices}{$device}{intents}{SetScene}->{SetScene}, $named);
             for (keys %{$combined}) {
                 delete $combined->{$_} if $combined->{$_} eq 'none' || defined $named->{all} && $named->{all} eq 'none';
@@ -994,7 +989,12 @@ sub _analyze_rhassypAttr {
                 : delete $hash->{helper}{devicemap}{devices}{$device}{intents}->{SetScene};
         }
         if ($key eq 'confirm') {
-            $hash->{helper}{devicemap}{devices}{$device}{confirmIntents} = $val;
+            #my($unnamed, $named) = parseParams($val);
+            $hash->{helper}{devicemap}{devices}{$device}{confirmIntents} = join q{,}, (@{$unnamed}, keys %{$named});
+            $hash->{helper}{devicemap}{devices}{$device}{confirmIntentResponses} = $named if $named;
+        }
+        if ($key eq 'confirmValueMap') {
+            $hash->{helper}{devicemap}{devices}{$device}{confirmValueMap} = $named if $named;
         }
     }
 
@@ -1785,16 +1785,23 @@ sub getNeedsConfirmation {
     my $device = shift;
 
     my $re = defined $device ? $device : $data->{Group};
+    my $target = defined $device ? $data->{Device} : $data->{Group};
     Log3( $hash, 5, "[$hash->{NAME}] getNeedsConfirmation called, regex is $re" );
     my $timeout = _getDialogueTimeout($hash);
-    my $response = getResponse($hash, 'DefaultConfirmationRequestRawInput');
+    my $response;
     my $rawInput = $data->{rawInput};
-    $response =~ s{(\$\w+)}{$1}eegx;
+    my $Value    = $data->{Value};
+    $Value = $hash->{helper}{lng}->{words}->{$Value} if defined $hash->{helper}{lng}->{words} && defined $hash->{helper}{lng}->{words}->{$Value};
 
     if (defined $hash->{helper}{tweaks} 
          && defined $hash->{helper}{tweaks}{confirmIntents} 
          && defined $hash->{helper}{tweaks}{confirmIntents}{$intent} 
-         && $hash->{helper}{tweaks}{confirmIntents}{$intent} =~ m{\b$re(?:[,]|\Z)}i ) { ##no critic qw(RequireExtendedFormatting)
+         && $re =~ m{\A($hash->{helper}{tweaks}{confirmIntents}{$intent})\z}m ) { 
+        $response = defined $hash->{helper}{tweaks}{confirmIntentResponses} 
+                    && defined $hash->{helper}{tweaks}{confirmIntentResponses}{$intent} ? $hash->{helper}{tweaks}{confirmIntentResponses}{$intent}
+                    : getResponse($hash, 'DefaultConfirmationRequestRawInput');
+
+        $response =~ s{(\$\w+)}{$1}eegx;
         Log3( $hash, 5, "[$hash->{NAME}] getNeedsConfirmation is true for tweak, response is $response" );
         setDialogTimeout($hash, $data, $timeout, $response);
         return 1;
@@ -1804,8 +1811,18 @@ sub getNeedsConfirmation {
 
     my $confirm = $hash->{helper}{devicemap}{devices}{$device}->{confirmIntents};
     return if !defined $confirm;
-    if ( $confirm->{$intent} =~ m{\b$intent(?:[,]|\Z)}i ) { ##no critic qw(RequireExtendedFormatting)
-        Log3( $hash, 5, "[$hash->{NAME}] getNeedsConfirmation is true on device level" );
+    if ( $confirm =~ m{\b$intent(?:[,]|\Z)}i ) { ##no critic qw(RequireExtendedFormatting)
+        $response = defined $hash->{helper}{devicemap}{devices}{$device}->{confirmIntentResponses} 
+                    && defined $hash->{helper}{devicemap}{devices}{$device}->{confirmIntentResponses}{$intent} 
+                  ? $hash->{helper}{devicemap}{devices}{$device}->{confirmIntentResponses}{$intent}
+                  : defined $hash->{helper}{tweaks} 
+                    && defined $hash->{helper}{tweaks}{confirmIntentResponses} 
+                    && defined $hash->{helper}{tweaks}{confirmIntentResponses}{$intent} ? $hash->{helper}{tweaks}{confirmIntentResponses}{$intent}
+                  : getResponse($hash, 'DefaultConfirmationRequestRawInput');
+        my $words = $hash->{helper}{devicemap}{devices}{$device}->{confirmValueMap} // $hash->{helper}{lng}->{words} // {};
+        $Value    = $words->{$data->{Value}} // $Value;
+        $response =~ s{(\$\w+)}{$1}eegx;
+        Log3( $hash, 5, "[$hash->{NAME}] getNeedsConfirmation is true on device level, response is $response" );
         setDialogTimeout($hash, $data, $timeout, $response);
         return 1;
     }
@@ -2877,6 +2894,8 @@ sub handleIntentSetOnOff {
 
         # Mapping found?
         if ( defined $device && defined $mapping ) {
+            #check if confirmation is required
+            return $hash->{NAME} if !$data->{Confirmation} && getNeedsConfirmation( $hash, $data, 'SetOnOff', $device );
             my $cmdOn  = $mapping->{cmdOn} // 'on';
             my $cmdOff = $mapping->{cmdOff} // 'off';
             my $cmd = $value eq 'on' ? $cmdOn : $cmdOff;
@@ -2985,6 +3004,7 @@ sub handleIntentSetTimedOnOff {
 
         # Mapping found?
         if ( defined $device && defined $mapping ) {
+            return $hash->{NAME} if !$data->{Confirmation} && getNeedsConfirmation( $hash, $data, 'SetTimedOnOff', $device );
             my $cmdOn  = $mapping->{cmdOn} // 'on';
             my $cmdOff = $mapping->{cmdOff} // 'off';
             my $cmd = $value eq 'on' ? $cmdOn : $cmdOff;
@@ -3042,6 +3062,9 @@ sub handleIntentSetTimedOnOffGroup {
     return respond( $hash, $data, getResponse( $hash, 'duration_not_understood' ) ) 
     if !defined $data->{Hourabs} && !defined $data->{Hour} && !defined $data->{Min} && !defined $data->{Sec};
 
+    #check if confirmation is required
+    return $hash->{NAME} if !$data->{Confirmation} && getNeedsConfirmation( $hash, $data, 'SetTimedOnOffGroup' );
+
     my $devices = getDevicesByGroup($hash, $data);
 
     #see https://perlmaven.com/how-to-sort-a-hash-of-hashes-by-value for reference
@@ -3087,7 +3110,7 @@ sub handleIntentSetTimedOnOffGroup {
 
         # Mapping found?
         next if !defined $mapping;
-        
+
         my $cmdOn  = $mapping->{cmdOn} // 'on';
         my $cmdOff = $mapping->{cmdOff} // 'off';
         my $cmd = $value eq 'on' ? $cmdOn : $cmdOff;
@@ -3192,6 +3215,9 @@ sub handleIntentSetNumericGroup {
     Log3($hash->{NAME}, 5, 'handleIntentSetNumericGroup called');
 
     return respond( $hash, $data, getResponse($hash, 'NoValidData') ) if !exists $data->{Value} && !exists $data->{Change};
+
+    #check if confirmation is required
+    return $hash->{NAME} if !$data->{Confirmation} && getNeedsConfirmation( $hash, $data, 'SetNumericGroup' );
 
     my $devices = getDevicesByGroup($hash, $data);
 
@@ -3362,6 +3388,9 @@ sub handleIntentSetNumeric {
     # limit to min/max  (if set)
     $newVal = max( $minVal, $newVal ) if defined $minVal;
     $newVal = min( $maxVal, $newVal ) if defined $maxVal;
+
+    #check if confirmation is required
+    return $hash->{NAME} if !defined $data->{'.inBulk'} && !$data->{Confirmation} && getNeedsConfirmation( $hash, $data, 'SetNumeric' );
 
     # execute Cmd
     analyzeAndRunCmd($hash, $device, $cmd, $newVal);
@@ -3539,6 +3568,8 @@ sub handleIntentMediaControls {
         $mapping = getMapping($hash, $device, 'MediaControls', undef, defined $hash->{helper}{devicemap}, 0);
 
         if (defined $device && defined $mapping) {
+            #check if confirmation is required
+            return $hash->{NAME} if !$data->{Confirmation} && getNeedsConfirmation( $hash, $data, 'MediaControls' );
             my $cmd = $mapping->{$command};
 
             #Beta-User: backwards compability check; might be removed later...
@@ -3604,6 +3635,10 @@ sub handleIntentSetScene{
 
         # Mapping found?
         return respond( $hash, $data, getResponse( $hash, 'NoValidData' ) ) if !$device || !defined $mapping;
+
+        #check if confirmation is required
+        return $hash->{NAME} if !$data->{Confirmation} && getNeedsConfirmation( $hash, $data, 'SetScene' );
+
         my $cmd = qq(scene $scene);
 
         # execute Cmd
@@ -3690,6 +3725,8 @@ sub handleIntentMediaChannels {
         #$cmd = (split m{=}x, $cmd, 2)[1];
 
         if ( defined $device && defined $cmd ) {
+            #check if confirmation is required
+            return $hash->{NAME} if !$data->{Confirmation} && getNeedsConfirmation( $hash, $data, 'MediaChannels' );
             $response = getResponse($hash, 'DefaultConfirmation');
             # Cmd ausführen
             analyzeAndRunCmd($hash, $device, $cmd);
@@ -3735,6 +3772,9 @@ sub handleIntentSetColor {
 
     return if $inBulk && !defined $device;
     return respond( $hash, $data, getResponse( $hash, 'NoDeviceFound' ) ) if !defined $device;
+
+    #check if confirmation is required
+    return $hash->{NAME} if !defined $data->{'.inBulk'} && !$data->{Confirmation} && getNeedsConfirmation( $hash, $data, 'SetColor' );
 
     if ( defined $cmd || defined $cmd2 ) {
         $response = getResponse($hash, 'DefaultConfirmation');
@@ -3893,6 +3933,9 @@ sub handleIntentSetColorGroup {
     Log3($hash->{NAME}, 5, 'handleIntentSetColorGroup called');
 
     return respond( $hash, $data, getResponse( $hash, 'NoValidData' ) ) if !exists $data->{Color} && !exists $data->{Rgb} &&!exists $data->{Saturation} && !exists $data->{Colortemp} && !exists $data->{Hue};
+
+    #check if confirmation is required
+    return $hash->{NAME} if !$data->{Confirmation} && getNeedsConfirmation( $hash, $data, 'SetColorGroup' );
 
     my $devices = getDevicesByGroup($hash, $data);
 
@@ -4721,6 +4764,21 @@ i="i am hungry" f="set Stove on" d="Stove" c="would you like roast pork"</code><
         <p>Example:</p>
         <p><code>timeouts: confirm=25 default=30</code></p>
       </li>
+      <a id="RHASSPY-attr-rhasspyTweaks-confirmIntents"></a>
+      <li><b>confirmIntents</b>
+        <p>This key may contain <i>&lt;Intent&gt;=&lt;regex&gt;</i> pairs beeing 
+        <ul>
+        <li><i>Intent</i> one of the intents supporting confirmation feature (all set type intents targeting to single devices or groups)  and </li>
+        <li><i>regex</i> containing a regular expression matching to either the group name (for group intents) or the device name(s) - using a full match lookup. If intent and regex match, a confirmation will be requested.
+        </ul>
+        Example: <p><code>confirmIntents=SetOnOffGroup=light|blinds SetOnOff=blind.*</code></p>
+      </li>
+      <a id="RHASSPY-attr-rhasspyTweaks-confirmIntentResponses"></a>
+      <li><b>confirmIntentResponses</b>
+        <p>By default, the answer/confirmation request will be some kind of echo to the originally spoken sentence ($rawInput as stated by <i>DefaultConfirmationRequestRawInput</i> key in <i>responses</i>). You may change this for each intent specified using $target, ($rawInput) and $Value als parameters.
+        Example: <p><code>confirmIntentResponses=SetOnOffGroup="really switch group $target $Value" SetOnOff="confirm setting $target $Value" </code></p>
+        <i>$Value</i> may be translated with defaults from a <i>words</i> key in languageFile, for more options on <i>$Value</i> and/or more specific settings in single devices see also <i>confirmValueMap</i> key in <a href="#RHASSPY-attr-rhasspySpecials">rhasspySpecials</a>.</p>
+      </li>
       <a id="RHASSPY-attr-rhasspyTweaks-intentFilter"></a>
       <li><b>intentFilter</b>
         <p>Atm. Rhasspy will activate all known intents at startup. As some of the intents used by FHEM are only needed in case some dialogue is open, it will deactivate these intents (atm: <i>ConfirmAction, CancelAction, ChoiceRoom</i> and <i>ChoiceDevice</i>(including the additional parts derived from language and fhemId))) at startup or when no active filtering is detected. You may disable additional intents by just adding their names in <i>intentFilter</i> line or using an explicit state assignment in the form <i>intentname=true</i> (Note: activating the 4 mentionned intents is not possible!). For details on how <i>configure</i> works see <a href="https://rhasspy.readthedocs.io/en/latest/reference/#dialogue-manager">Rhasspy documentation</a>.
@@ -4802,7 +4860,7 @@ yellow=rgb FFFF00</code></p>
     <p><i>key:value</i> line by line arguments similar to <a href="#RHASSPY-attr-rhasspyTweaks">rhasspyTweaks</a>.</p>
     <ul>
       <li><b>group</b>
-        <p>If set, the device will not be directly addressed, but the mentioned group - typically a FHEM <a href="#structure">structure</a> device or a HUEDevice-type group. This has the advantage of saving RF ressources and/or already implemented logics.<br>
+        <p>If set, the device will not be directly addressed, but the mentioned group - typically a FHEM <a href="#structure">structure</a> device or a HUEDevice-type group. This has the advantage of saving RF ressources and/or fits better to already implemented logics.<br>
         Note: all addressed devices will be switched, even if they are not member of the rhasspyGroup. Each group should only be addressed once, but it's recommended to put this info in all devices under RHASSPY control in the same external group logic.<br>
         All of the following options are optional.</p>
         <ul>
@@ -4837,6 +4895,16 @@ yellow=rgb FFFF00</code></p>
         <p>Keywords <i>inRoom</i> and <i>outsideRoom</i> can be used, each followed by comma separated types to give priority in <i>GetNumeric</i>. This may eleminate requests in case of several possible devices or rooms to deliver requested info type.</p>
         <p>Example:</p>
         <p><code>attr sensor_outside_main rhasspySpecials priority:inRoom=temperature outsideRoom=temperature,humidity,pressure</code></p>
+      </li>
+      <li><b>confirm</b>
+        <p>This is the more granular alternative to <a href="#RHASSPY-attr-rhasspyTweaks-confirmIntents">confirmIntents key in rhasspyTweaks</a> (including <i>confirmIntentResponses</i>). You may provide intent names only or <i>&lt;Intent&gt;=&lt;response&gt;</i> pairs like <code>confirm: SetOnOff="$target shall be switched $Value" SetScene</code>. 
+        </p>
+      </li>
+      <li><b>confirmValueMap</b>
+        <p>Provide a device specific translation for $Value, e.g. for a blind type device <i>rhasspySpecials</i> could look like:<br>
+        <code>confirm: SetOnOff="really $Value $target"<br>
+              confirmValueMap: on=open off=close</code>
+        </p>
       </li>
       <li><b>scenes</b>
         <p><code>attr lamp1 rhasspySpecials scenes:scene2="Kino zu zweit" scene3=Musik scene1=none scene4=none</code></p>
@@ -4891,3 +4959,4 @@ yellow=rgb FFFF00</code></p>
 
 =end html
 =cut
+
