@@ -3371,7 +3371,7 @@ sub handleIntentSetNumeric {
             $newVal = $value;
             #$newVal =   0 if ($newVal <   0);
             #$newVal = 100 if ($newVal > 100);
-            $newVal = round((($newVal * (($maxVal - $minVal) / 100)) + $minVal), 0);
+            $newVal = _round(($newVal * (($maxVal - $minVal) / 100)) + $minVal);
         }
     } else { # defined $change
         # Stellwert um Wert x ändern ("Mache Lampe um 20 heller" oder "Mache Lampe heller")
@@ -3384,7 +3384,7 @@ sub handleIntentSetNumeric {
         elsif ( ( $ispct || $forcePercent ) && $checkMinMax ) {
             #$maxVal = 100 if !looks_like_number($maxVal); #Beta-User: Workaround, should be fixed in mapping (tbd)
             #my $diffRaw = round((($diff * (($maxVal - $minVal) / 100)) + $minVal), 0);
-            my $diffRaw = round(($diff * ($maxVal - $minVal) / 100), 0);
+            my $diffRaw = _round($diff * ($maxVal - $minVal) / 100);
             $newVal = ($up) ? $oldVal + $diffRaw : $oldVal - $diffRaw;
             $newVal = max( $minVal, min( $maxVal, $newVal ) );
         }
@@ -3475,7 +3475,7 @@ sub handleIntentGetNumeric {
       my @tokens = split m{\s+}x, $value;
       $value = $tokens[$part] if @tokens >= $part;
     }
-    $value = round( ($value * ($maxVal - $minVal) / 100 + $minVal), 0) if $forcePercent;
+    $value = _round($value * ($maxVal - $minVal) / 100 + $minVal) if $forcePercent;
 
     my $isNumber = looks_like_number($value);
     # replace dot by comma if needed
@@ -3827,7 +3827,7 @@ sub _runSetColorCmd {
             return respond( $hash, $data, $error ) if $error;
             return getResponse($hash, 'DefaultConfirmation');
         } elsif ( defined $data->{$kw} && defined $mapping->{$_} ) {
-            my $value = round( ($mapping->{$_}->{maxVal} - $mapping->{$_}->{minVal}) * $data->{$kw} / ($kw eq 'Hue' ? 360 : 100) , 0);
+            my $value = _round( ( $mapping->{$_}->{maxVal} - $mapping->{$_}->{minVal} ) * $data->{$kw} / $kw eq 'Hue' ? 360 : 100 ) ;
             $value = min(max($mapping->{$_}->{minVal}, $value), $mapping->{$_}->{maxVal});
             $error = AnalyzeCommand($hash, "set $device $mapping->{$_}->{cmd} $value");
             return if $inBulk;
@@ -4402,7 +4402,8 @@ sub _ReplaceReadingsVal {
         if($s && $s =~ m{:d|:r|:i}x && $val =~ m{(-?\d+(\.\d+)?)}x) {
             $val = $1;
             $val = int($val) if $s eq ':i';
-            $val = round($val, defined $1 ? $1 : 1) if $s =~ m{\A:r(\d)?}x;
+            my $n = defined $1 ? $1 : 1;
+            $val = sprintf("%.${n}f",$val) if $s =~ m{\A:r(\d)?}x;
         }
         return $val;
     };
@@ -4466,6 +4467,7 @@ sub _toCleanJSON {
     return $json;
 }
 
+sub _round { int( $_[0] + ( $_[0] < 0 ? -.5 : .5 ) ); }
 
 1;
 
