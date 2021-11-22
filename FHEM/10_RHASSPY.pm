@@ -1,4 +1,4 @@
-# $Id: 10_RHASSPY.pm 24786 2021-10-17 + Beta-User$
+# $Id: 10_RHASSPY.pm 24786 2021-11-22 + Beta-User$
 ###########################################################################
 #
 # FHEM RHASSPY module (https://github.com/rhasspy)
@@ -339,7 +339,7 @@ sub Define {
 
     my @unknown;
     for (keys %{$h}) {
-        push @unknown, $_ if $_ !~ m{\A(?:baseUrl|defaultRoom|language|devspec|fhemId|prefix|encoding|useGenericAttrs)\z}xm;
+        push @unknown, $_ if $_ !~ m{\A(?:baseUrl|defaultRoom|language|devspec|fhemId|prefix|encoding|useGenericAttrs|experimental)\z}xm;
     }
     my $err = join q{, }, @unknown;
     return "unknown key(s) in DEF: $err" if @unknown && $init_done;
@@ -347,16 +347,17 @@ sub Define {
 
     $hash->{defaultRoom} = $defaultRoom;
     my $language = $h->{language} // shift @{$anon} // lc AttrVal('global','language','en');
-    $hash->{MODULE_VERSION} = '0.4.41a';
+    $hash->{MODULE_VERSION} = '0.5.0';
     $hash->{baseUrl} = $Rhasspy;
     initialize_Language($hash, $language) if !defined $hash->{LANGUAGE} || $hash->{LANGUAGE} ne $language;
     $hash->{LANGUAGE} = $language;
-    $hash->{devspec} = $h->{devspec} // q{room=Rhasspy};
+    $hash->{devspec} = $h->{devspec} // defined $h->{useGenericAttrs} && $h->{useGenericAttrs} == 0 ? q{room=Rhasspy} : q{genericDeviceType=.+};
     $hash->{fhemId} = $h->{fhemId} // q{fhem};
     initialize_prefix($hash, $h->{prefix}) if !defined $hash->{prefix} || defined $h->{prefix} && $hash->{prefix} ne $h->{prefix};
     $hash->{prefix} = $h->{prefix} // q{rhasspy};
     $hash->{encoding} = $h->{encoding} // q{utf8};
     $hash->{useGenericAttrs} = $h->{useGenericAttrs} // 1;
+    $hash->{experimental}    = $h->{experimental} if defined $h->{experimental};
     $hash->{'.asyncQueue'} = [];
     #Beta-User: Für's Ändern von defaultRoom oder prefix vielleicht (!?!) hilfreich: https://forum.fhem.de/index.php/topic,119150.msg1135838.html#msg1135838 (Rudi zu resolveAttrRename) 
 
@@ -985,6 +986,7 @@ sub _analyze_rhassypAttr {
             $specials->{setter} = $vencmd if defined $vencmd;
             $specials->{device} = $vendev if defined $vendev;
             $specials->{CustomCommand} = $named->{CustomCommand} if defined $named->{CustomCommand};
+            $specials->{stopCommand}   = $named->{stopCommand}   if defined $named->{stopCommand};
 
             $hash->{helper}{devicemap}{devices}{$device}{venetian_specials} = $specials if defined $vencmd || defined $vendev;
         }
@@ -1124,7 +1126,7 @@ sub _analyze_genDevType {
         return;
     }
 
-    if ( $gdt eq 'blind' ) {
+    if ( $gdt eq 'blind' || $gdt eq 'blinds' || $gdt eq 'shutter') {
         if ( $allset =~ m{\bdim([\b:\s]|\Z)}xms ) {
             my $maxval = InternalVal($device, 'TYPE', 'unknown') eq 'ZWave' ? 99 : 100;
             $currentMapping = 
@@ -1142,6 +1144,9 @@ sub _analyze_genDevType {
             SetOnOff => { SetOnOff => {cmdOff => 'pct 0', type => 'SetOnOff', cmdOn => 'pct 100'} },
             SetNumeric => { setTarget => { cmd => 'pct', currentVal => 'pct', maxVal => '100', minVal => '0', step => '13', type => 'setTarget'} }
             };
+        }
+        if ( $allset =~ m{\b(stop)([\b:\s]|\Z)}xmsi ) {
+        $currentMapping->{SetNumeric}->{setTarget}->{cmdStop} = $1;
         }
         $hash->{helper}{devicemap}{devices}{$device}{intents} = $currentMapping;
         return;
@@ -2151,7 +2156,7 @@ sub Parse {
         # Name mit IODev vergleichen
         next if $ioname ne AttrVal($hash->{NAME}, 'IODev', ReadingsVal($hash->{NAME}, 'IODev', InternalVal($hash->{NAME}, 'IODev', 'none')));
         next if IsDisabled( $hash->{NAME} );
-        my $topicpart = qq{/$hash->{LANGUAGE}\.$hash->{fhemId}\[._]|hermes/dialogueManager|hermes/nlu/intentNotRecognized};
+        my $topicpart = qq{/$hash->{LANGUAGE}\.$hash->{fhemId}\[._]|hermes/dialogueManager|hermes/nlu/intentNotRecognized}; #|hermes/hotword/[^/]+/detected
         next if $topic !~ m{$topicpart}x;
 
         Log3($hash,5,"RHASSPY: [$hash->{NAME}] Parse (IO: ${ioname}): Msg: $topic => $value");
@@ -2286,7 +2291,7 @@ sub analyzeMQTTmessage {
     }
     
     if ($topic =~ m{\Ahermes/nlu/intentNotRecognized}x && defined $siteId) {
-        handleIntentNotRecognized($hash, $data);
+        handleIntentNotRecognized($hash, $data) if $hash->{experimental};
         return;
     }
 
@@ -2537,7 +2542,7 @@ sub updateSlots {
     my $overwrite = defined $tweaks && defined $tweaks->{overwrite_all} ? $tweaks->{useGenericAttrs}->{overwrite_all} : 'true';
     $url = qq{/api/slots?overwrite_all=$overwrite};
 
-    my @gdts = (qw(switch light media blind thermostat thermometer));
+    my @gdts = (qw(switch light media blind blinds shutter thermostat thermometer));
     my @aliases = ();
     my @mainrooms = ();
 
@@ -2556,10 +2561,12 @@ sub updateSlots {
             }
             @names = get_unique(\@names);
             @names = ('') if !@names && $noEmpty;
-            $deviceData->{qq(${language}.${fhemId}.Device-${gdt})} = \@names if @names;
+            my $gdtmap = { blinds => 'blind', shutter => 'blind' };
+            my $mpdgdt = $gdtmap->{$gdt} // $gdt;
+            $deviceData->{qq(${language}.${fhemId}.Device-${mpdgdt})} = \@names if @names;
             @groupnames = get_unique(\@groupnames);
             @groupnames = ('') if !@groupnames && $noEmpty;
-            $deviceData->{qq(${language}.${fhemId}.Group-${gdt})} = \@groupnames if @groupnames;
+            $deviceData->{qq(${language}.${fhemId}.Group-${mpdgdt})} = \@groupnames if @groupnames;
         }
         @mainrooms = get_unique(\@mainrooms);
         @mainrooms = ('') if !@mainrooms && $noEmpty;
@@ -3387,7 +3394,10 @@ sub handleIntentSetNumeric {
     } else { # defined $change
         # Stellwert um Wert x ändern ("Mache Lampe um 20 heller" oder "Mache Lampe heller")
         #elsif ((!defined $unit || $unit ne 'Prozent') && defined $change && !$forcePercent) {
-        if ( ( !defined $unit || !$ispct ) && !$forcePercent ) {
+        if ( $change eq 'cmdStop' ) {
+            $newVal = $oldVal;
+        }
+        elsif ( ( !defined $unit || !$ispct ) && !$forcePercent ) {
             $newVal = ($up) ? $oldVal + $diff : $oldVal - $diff;
         }
         # Stellwert um Prozent x ändern ("Mache Lampe um 20 Prozent heller" oder "Mache Lampe um 20 heller" bei forcePercent oder "Mache Lampe heller" bei forcePercent)
@@ -3413,14 +3423,21 @@ sub handleIntentSetNumeric {
     return $hash->{NAME} if !defined $data->{'.inBulk'} && !$data->{Confirmation} && getNeedsConfirmation( $hash, $data, 'SetNumeric' );
 
     # execute Cmd
-    analyzeAndRunCmd($hash, $device, $cmd, $newVal);
+    $change ne 'cmdStop'
+            || !defined $mapping->{cmdStop}
+            ? analyzeAndRunCmd($hash, $device, $cmd, $newVal)
+            : analyzeAndRunCmd($hash, $device, $mapping->{cmdStop});
 
     #venetian blind special
     my $specials = $hash->{helper}{devicemap}{devices}{$device}{venetian_specials};
     if ( defined $specials ) {
         my $vencmd = $specials->{setter} // $cmd;
         my $vendev = $specials->{device} // $device;
-        analyzeAndRunCmd($hash, $vendev, defined $specials->{CustomCommand} ? $specials->{CustomCommand} :$vencmd , $newVal) if $device ne $vendev || $cmd ne $vencmd;
+        if ( $change ne 'cmdStop' ) {
+            analyzeAndRunCmd($hash, $vendev, defined $specials->{CustomCommand} ? $specials->{CustomCommand} :$vencmd , $newVal) if $device ne $vendev || $cmd ne $vencmd;
+        } elsif ( defined $specials->{stopCommand} ) {
+            analyzeAndRunCmd($hash, $vendev, $specials->{stopCommand});
+        }
     }
 
     # get response 
@@ -4566,7 +4583,7 @@ So all parameters in define should be provided in the <i>key=value</i> form. In 
 <p><b>Parameters:</b><br>
 <ul>
   <li><b>baseUrl</b>: http-address of the Rhasspy service web-interface. Optional, but needed as soon as default (<code>baseUrl=http://127.0.0.1:12101</code>) is not appropriate.<br>Make sure, this is set to correct values (ip and port) if Rhasspy is not running on the same machine or not uses default port!</li>
-  <li><b>devspec</b>: A description of devices that should be controlled by Rhasspy. Optional, but recommended, as (for compability reasons) default is <code>devspec=room=Rhasspy</code>. See <a href="#devspec"> as a reference</a>, how to e.g. use a comma-separated list of devices or combinations like <code>devspec=room=livingroom,room=bathroom,bedroomlamp</code>.</li>
+  <li><b>devspec</b>: All the devices you want to control by Rhasspy <b>must meet devspec</b>. If <i>genericDeviceType</i> support is enabled, it defaults to <code>genericDeviceType=.+</code>, otherwise the former default  <code>devspec=room=Rhasspy</code> will be used. See <a href="#devspec"> as a reference</a>, how to e.g. use a comma-separated list of devices or combinations like <code>devspec=room=livingroom,room=bathroom,bedroomlamp</code>.</li>
   <li><b>defaultRoom</b>: Default room name. Used to speak commands without a room name (e.g. &quot;turn lights on&quot; to turn on the lights in the &quot;default room&quot;). Optional, but also recommended. Default is <code>defaultRoom=default</code>.</li>
   <li><b>language</b>: Makes part of the topic tree, RHASSPY is listening to. Should (but needs not to) point to the language voice commands shall be spoken with. Default is derived from global, which defaults to <code>language=en</code>. Preferably language should be set appropriate in global, if possible.</li>
   <li><b>encoding</b>: May be helpfull in case you experience problems in conversion between RHASSPY (module) and Rhasspy (service). Example: <code>encoding=cp-1252</code>. Do not set this unless you experience encoding problems!</li>
@@ -4780,6 +4797,7 @@ i="i am hungry" f="set Stove on" d="Stove" c="would you like roast pork"</code><
       <ul>
         <li><b>c</b> => either numeric or text. If numeric: Timeout to wait for automatic cancellation. If text: response to send to ask for confirmation.</li>
         <li><b>ct</b> => numeric value for timeout in seconds, default: 15.</li>
+        See <a href="#RHASSPY-confirmation"><i>here</i></a> for more info about confirmations.
       </ul></li>
     </ul>
   </li>
@@ -4823,6 +4841,15 @@ i="i am hungry" f="set Stove on" d="Stove" c="would you like roast pork"</code><
         Example: <p><code>confirmIntents=SetOnOffGroup=light|blinds SetOnOff=blind.*</code></p>
         </li>
         </ul>
+        <a id="RHASSPY-confirmation"></a>
+        <p>To execute any action requiring confirmation, you have to send an <i>Mode:OK</i> value by the <i>ConfirmAction</i> intent. Any other <i>Mode</i> key sent to <i>ConfirmAction</i> intent will be interpretad as cancellation request. For cancellation, you may alternatively use the <i>CancelAction</i> intent. Example:<br>
+            <code>[de.fhem:ConfirmAction]<br>
+            ( yes, please do it | go on | that's ok | yes, please ){Mode:OK}<br>
+            ( don't do it after all ){Mode}<br>
+            [de.fhem:CancelAction]<br>
+            ( let it be | oh no | cancel | cancellation ){Mode:Cancel}
+            </code><br>
+        </p>
       </li>
       <a id="RHASSPY-attr-rhasspyTweaks-confirmIntentResponses"></a>
       <li><b>confirmIntentResponses</b>
@@ -4930,6 +4957,8 @@ yellow=rgb FFFF00</code></p>
         <ul>
           <li><b>setter</b> is the set command to control slat angle, e.g. <i>positionSlat</i> for CUL_HM or older ZWave type devices</li>
           <li><b>device</b> is needed if the slat command has to be issued towards a different device (applies e.g. to newer ZWave type devices)</li>
+          <li><b>CustomCommand</b> arbitrary command defined by the user. Note: no variables will be evaluated. Will be executed if a regular nummeric command is detected.</li>
+          <li><b>stopCommand</b> arbitrary command defined by the user. Note: no variables will be evaluated. Will be executed if a stop command is detected.</li>
         </ul>
         <p>If set, the slat target position will be set to the same level than the main device.</p>
       </li>
