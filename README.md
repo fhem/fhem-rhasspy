@@ -587,7 +587,7 @@ Example-Sentences:
 Example-Rhasspy-Sentences:
 ```
 [en.fhem:SetOnOff]
-(turn on|open|start){Value:on) $de.fhem.Device{Device} [$de.fhem.Room{Room}]
+(turn on|open|start){Value:on} $de.fhem.Device{Device} [$de.fhem.Room{Room}]
 (turn off|close|stop){Value:off} $de.fhem.Device{Device} [$de.fhem.Room{Room}]
 ```
 
