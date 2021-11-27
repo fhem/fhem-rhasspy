@@ -1,4 +1,4 @@
-# $Id: 10_RHASSPY.pm 24786 2021-11-25 + Beta-User$
+# $Id: 10_RHASSPY.pm 24786 2021-11-26 + Beta-User$
 ###########################################################################
 #
 # FHEM RHASSPY module (https://github.com/rhasspy)
@@ -349,7 +349,7 @@ sub Define {
 
     $hash->{defaultRoom} = $defaultRoom;
     my $language = $h->{language} // shift @{$anon} // lc AttrVal('global','language','en');
-    $hash->{MODULE_VERSION} = '0.5.02';
+    $hash->{MODULE_VERSION} = '0.5.03';
     $hash->{baseUrl} = $Rhasspy;
     initialize_Language($hash, $language) if !defined $hash->{LANGUAGE} || $hash->{LANGUAGE} ne $language;
     $hash->{LANGUAGE} = $language;
@@ -4277,7 +4277,7 @@ sub handleIntentConfirmAction {
     my $mode = $data->{Mode};
 
     #cancellation case
-    return handleIntentCancelAction($hash, $data) if $mode ne 'OK' && $mode ne 'Back' && $mode ne 'Next' ;
+    return handleIntentCancelAction($hash, $data) if !$mode || $mode ne 'OK' && $mode ne 'Back' && $mode ne 'Next';
 
     #confirmed case
     my $identiy = qq($data->{sessionId});
@@ -5107,29 +5107,46 @@ yellow=rgb FFFF00</code></p>
 
 <a id="RHASSPY-intents"></a>
 <h4>Intents</h4>
-<p>The following intents are directly implemented in RHASSPY code:
+<p>The following intents are directly implemented in RHASSPY code and the keywords used by them in sentences.ini are as follows:
 <ul>
-  <li>Shortcuts</li>
+  <li>Shortcuts</li> (keywords as required by user code)
   <li>SetOnOff</li>
+  {Device} and {Value} (on/off) are mandatory, {Room} is optional.
   <li>SetOnOffGroup</li>
-  <li>SetTimedOnOff</li>
-  <li>SetTimedOnOffGroup</li>
-  <li>GetOnOff</li>
+  {Group} and {Value} (on/off) are mandatory, {Room} is optional, <i>global</i> in {Room} will be interpreted as "everywhere".
+  <li>SetTimedOnOff</li>Basic keywords see SetOnOff, plus timer info in at least one of the fields {Hour} (for relative additions starting now), {Hourabs} (absolute time of day), {Min} (minutes) and {Sec} (seconds). If {Hourabs} is provided, {Min} and {Sec} will also be interpreted as absolute values.
+ uhr [(1..60){Min!int}] $OnOffValue{Value}
+  <li>SetTimedOnOffGroup</li> (for keywords see SetOnOffGroup)
+  <li>GetOnOff</li>(for keywords see SetOnOff)
   <li>SetNumeric</li>
+  {Device} and {Value} (nummeric value) are mandatory, {Room} is optional. Additional optional fields are {Unit} (value <i>percent</i> will be interprated as request to calculate, others will be ignored) and {Change} with one of 
+  <ul>
+    <li>lightUp, lightDown (brightness)</li>
+    <li>volUp, volDown (volume)</li>
+    <li>tempUp, tempDown (temperature)</li>
+    <li>setUp, setDown (setTarget)</li>
+    <li>cmdStop (blinds)</li>
+  </ul>
+  allowing to decide on calculation scheme and to guess for the proper device and/or answer.
   <li>SetNumericGroup</li>
-  <li>GetNumeric</li>
-  <li>GetState</li>
+    (as SetNumeric, except for {Group} instead of {Device}).
+  <li>GetNumeric</li> (as SetNumeric)
+  <li>GetState</li> {State} and {Device} are mandatory, {Room} is optional.
   <li>MediaControls</li>
-  <li>MediaChannels</li>
-  <li>SetColor</li>
-  <li>SetColorGroup</li>
+  {Device} and {Command} are mandatory, {Room} is optional. {Command} may be one of cmdStop, cmdPlay, cmdPause, cmdFwd or cmdBack
+  <li>MediaChannels</li> (as configured by the user)
+  <li>SetColor</li> 
+  {Device} and one Color option are mandatory, {Room} is optional. Color options are {Hue} (0-360), {Colortemp} (0-100), {Saturation} (as understood by your device) or {Rgb} (hex value from 000000 to FFFFFF)
+  <li>SetColorGroup</li> (as SetColor, except for {Group} instead of {Device}).
+  <li>SetScene</li> {Device} and {Scene} (it's recommended to use the $lng.fhemId.Scenes slot to get that generated automatically!).
   <li>GetTime</li>
   <li>GetDate</li>
-  <li>SetTimer</li>
+  <li>SetTimer</li> Timer info as described in SetTimedOnOff is mandatory, {Room} and/or {Label} are optional to distinguish between different timers.
   <li>ConfirmAction</li>
-  <li>CancelAction</li>
-  <li>ChoiceRoom</li>
-  <li>ChoiceDevice</li>
+  {Mode} with value 'OK'. All other calls will be interpreted as CancelAction intent call.
+  <li>CancelAction</li>{Mode} is recommended.
+  <li>ChoiceRoom</li>{Room}
+  <li>ChoiceDevice</li>{Device}
   <li>ReSpeak</li>
 </ul>
 
