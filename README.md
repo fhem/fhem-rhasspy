@@ -112,12 +112,12 @@ define <deviceName> MQTT2_CLIENT <ip-or-hostname-of-mqtt-server>:<port>
 ```
 attr <deviceName> clientOrder RHASSPY MQTT_GENERIC_BRIDGE MQTT2_DEVICE
 ```
-- Add MQTT-subscriptions needed for this module:
-Either
+- Add MQTT-subscriptions needed for this module:\
+  Either
 ```
 attr <deviceName> subscriptions hermes/intent/+ hermes/dialogueManager/sessionStarted hermes/dialogueManager/sessionEnded
 ```
-or if this MQTT2_CLIENT is only used by RHASSPY
+  or if this MQTT2_CLIENT is only used by RHASSPY
 ```
 attr rhasspyMQTT2 subscriptions setByTheProgram
 ```
