@@ -112,9 +112,14 @@ define <deviceName> MQTT2_CLIENT <ip-or-hostname-of-mqtt-server>:<port>
 ```
 attr <deviceName> clientOrder RHASSPY MQTT_GENERIC_BRIDGE MQTT2_DEVICE
 ```
-- Add MQTT-subscriptions needed for this module:
+- Add MQTT-subscriptions needed for this module:\
+  Either
 ```
 attr <deviceName> subscriptions hermes/intent/+ hermes/dialogueManager/sessionStarted hermes/dialogueManager/sessionEnded
+```
+  or if this MQTT2_CLIENT is only used by RHASSPY
+```
+attr rhasspyMQTT2 subscriptions setByTheProgram
 ```
 
 **Important**: The attribute `clientOrder` ist not available in older version of MQTT2_CLIENT. Be sure to use an up-to-date version of this module.
@@ -129,13 +134,15 @@ In case you are using the MQTT server also for other purposes than Rhasspy, you 
 hermes/intent/+
 hermes/dialogueManager/sessionStarted
 hermes/dialogueManager/sessionEnded
+hermes/nlu/intentNotRecognized
+hermes/hotword/+/detected
 ```
 
 ## Definition (DEF) in FHEM
 You can define a new instance of this module with:
 
 ```
-define <name> RHASSPY <baseUrl> <devspec> <defaultRoom> <language> <fhemId> <prefix> <useGenericAttrs> <encoding>
+define <name> RHASSPY <baseUrl> <devspec> <defaultRoom> <language> <fhemId> <prefix> <useGenericAttrs> <encoding> <handleHotword>
 ```
 
 All parameters are optional but changing some of them later may result in confusing results. So it's recommended to especially check if _fhemId_ and/or _prefix_ really have to be set different than the defaults. In most cases, these two are for advanced configuration (e.g. multiple languages), so when starting with RHASSPY, you may not care much about that.
@@ -163,6 +170,10 @@ All parameters are optional but changing some of them later may result in confus
 
 * **`encoding`**\
   If there are any problems with mutated vowels, it's possible to set a specific character encoding. Default is _utf8_.
+<!--
+* **`handleHotword`**\
+  Triggers the reading _hotword_ if a hotword is detected. See attribute [Attribute *rhasspyHotwords*](#attribute-rhasspyhotwords) for further details.
+-->
 
 Simple-Example for a define:
 ```
@@ -237,6 +248,8 @@ define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceT
     Reinitialization of language file.\
     Be sure to execute this command after changing something in the language-configuration file or the attribute `languageFile`!\
     Example: `set <rhasspyDevice> update language`
+  * **intent_filter**\
+    Reset intent filters used by Rhasspy dialogue manager. See intentFilter in rhasspyTweaks attribute for details.
   * **all**\
     Update devicemap and language.\
     Example: `set <rhasspyDevice> update all`
@@ -351,7 +364,62 @@ define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceT
     Example:
 	
     `timeouts: confirm=25 default=30`
+  * **confirmIntents**\
+    If set, Rhasspy will ask for a confirmation if a specific intent is called.
+    This key may contain <Intent>=<regex> pairs beeing
 
+    * **Intent** one of the intents supporting confirmation feature (all set type intents) and
+    * **Regex** containing a regular expression matching to either the group name (for group intents) or the device name(s) - using a full match lookup. If intent and regex match, a confirmation will be requested.
+    Example:
+    ```
+    confirmIntents=SetOnOffGroup=light|blinds SetOnOff=blind.*
+    ```
+    To execute any action requiring confirmation, you have to send an _Mode:OK_ value by the ConfirmAction intent. Any other mode key sent to ConfirmAction intent will be interpretad as cancellation request. For cancellation, you may alternatively use the CancelAction intent.
+    Example:
+    ```
+    [de.fhem:ConfirmAction]
+    ( yes, please do it | go on | that's ok | yes, please ){Mode:OK}
+    ( don't do it after all ){Mode}
+    
+    [de.fhem:CancelAction]
+    ( let it be | oh no | cancel | cancellation ){Mode:Cancel}
+    ```
+  * **confirmIntentResponses**\
+    By default, the answer/confirmation request will be some kind of echo to the originally spoken sentence ($rawInput as stated by DefaultConfirmationRequestRawInput key in responses). You may change this for each intent specified using $target, ($rawInput) and $Value als parameters.
+    Example:
+    ```
+    confirmIntentResponses=SetOnOffGroup="really switch group $target $Value" SetOnOff="confirm setting $target $Value"
+    ```
+    _$Value_ may be translated with defaults from a words key in languageFile, for more options on $Value and/or more specific settings in single devices see also confirmValueMap key in (rhasspySpecials)[#attribute-rhasspyspecials].
+
+  * **intentFilter**\
+    At the moment Rhasspy will activate all known intents at startup. As some of the intents used by FHEM are only needed in case some dialogue is open, it will deactivate these intents (atm: _ConfirmAction_, _CancelAction_, _ChoiceRoom_ and _ChoiceDevice_ (including the additional parts derived from language and fhemId)) at startup or when no active filtering is detected. You may disable additional intents by just adding their names in intentFilter line or using an explicit state assignment in the form intentname=true (Note: activating the 4 mentionned intents is not possible!). For details on how configure works see (Rhasspy documentation)[https://rhasspy.readthedocs.io/en/latest/reference/#dialogue-manager].
+  * **ignoreKeywords**\
+    You may have also some technically motivated settings in the attributes RHASSPY uses to generate slots, e.g. _MQTT_, _alexa_, _homebridge_ or _googleassistant_ in _room_ attribute. The key-value pairs will sort the given value out while generating the content for the respective slot for key (atm. only rooms and group are supported). value will be treated as (case-insensitive) regex with need to exact match.
+    Example:
+    ```
+    ignoreKeywords=room=MQTT|alexa|homebridge|googleassistant|logics-.*
+    ```
+    *Note:* requires restart to take full effect, will only affect content from general room, group or alexaRoom attributes.
+
+
+* **rhasspyHotwords**\
+  Used to send a command to FHEM as soon, as a specific hotword is detected.
+  On hotword per line. Syntax is either simple or an advanced version.
+  If used, a reading `hotword` is created and will contain the hotword and the siteId.
+  Examples:
+  ```
+  bumblebee_linux = set amplifier2 mute on
+  porcupine_linux = livingroom="set amplifier mute on" default={Log3($DEVICE,3,"device $DEVICE - room $ROOM - value $VALUE")}
+  ```
+  The simple example will run the command, as soon as the hotword `bumblebee_linux` is detected.
+  The advanced expample does only execute the command, if the `siteId` equals to `livingroom`.
+  `$DEVICE` is evaluated to `RHASSPY name`, `$ROOM` to `siteId` and `$VALUE` to the hotword.
+  `default` is optional and is used, if the delivered siteId does not match any siteIds defined here.
+  
+  *NOTE:* As all hotword messages are sent to a common topic structure, you may need additional measures to distinguish between several RHASSPY instances, e.g. by restricting subscriptions and/or using different entries in this attribute.
+
+  
 
 
 ### Readings / Events
@@ -379,6 +447,8 @@ define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceT
   Contains the last response ot the `updateSlots` command.`
 * **updateSlots**\
   Contains the last response ot the `updateSlots` command.`
+* **hotword**\
+  If activated, contains the last used hotword and siteId.
 
 
 ## Configure FHEM-devices for use with Rhasspy
@@ -525,19 +595,35 @@ All of the following options are optional.
   Example:\
   `attr lamp1 rhasspySpecials group:async_delay=100 prio=1 group=lights`
 
+* **numericValueMap**\
+  Allows mapping of numeric values from the _Value_ key to individual commands. Might e.g. usefull to address special positioning commands for blinds.
+  Example:
+  ```
+  attr blind1 rhasspySpecials numericValueMap:10='Event Slit' 50='myPosition'
+  ```
+  Note: will lead to e.g. `set blind1 Event Slit` when numeric value 10 is received in {Value} key.
+
 * **venetianBlind**\
-  `attr blind1 rhasspySpecials venetianBlind:setter=dim device=blind1_slats`
+  `attr blind1 rhasspySpecials venetianBlind:setter=dim device=blind1_slats stopCommand="set blind1_slats dim [blind1_slats:dim]"`
 
   Explanation (one of the two arguments is mandatory):
 
   * **setter** is the set command to control slat angle, e.g. positionSlat for CUL_HM or older ZWave type devices
-  * **device** is needed if the slat command has to be issued towards a different device (applies e.g. to newer ZWave type devices). If set, the slat target position will be set to the same level than the main device.
-
+  * **device** is needed if the slat command has to be issued towards a different device (applies e.g. to newer ZWave type devices)
+  * **CustomCommand** arbitrary command defined by the user. Note: no variables will be evaluated. Will be executed if a regular nummeric command is detected
+  * **stopCommand** arbitrary command defined by the user. Note: no variables will be evaluated. Will be executed if a stop command is detected
+  
+  If set, the slat target position will be set to the same level than the main device.
+  
 * **colorCommandMap**\
   Allows mapping of values from the Color key to individual commands.
 
   Example:\
   `attr lamp1 rhasspySpecials colorCommandMap:0='rgb FF0000' 120='rgb 00FF00' 240='rgb 0000FF'`
+
+* **colorTempMap**\
+  Allows mapping of values from the Colortemp key to individual commands.
+  Works similar to colorCommandMap
 
 * **colorForceHue2rgb**\
   Defaults to "0". If set, a rgb command will be issued, even if the device is capable to handle hue commands.
@@ -550,6 +636,16 @@ All of the following options are optional.
 
   Example:\
   `attr sensor_outside_main rhasspySpecials priority:inRoom=temperature outsideRoom=temperature,humidity,pressure`
+
+* **confirm**\
+  This is the more granular alternative to confirmIntents key in rhasspyTweaks (including confirmIntentResponses). You may provide intent names only or <Intent>=<response> pairs like `confirm: SetOnOff="$target shall be switched $Value" SetScene`.
+
+* **confirmValueMap**\
+  Provide a device specific translation for $Value, e.g. for a blind type device rhasspySpecials could look like:
+  ```
+  confirm: SetOnOff="really $Value $target"
+  confirmValueMap: on=open off=close
+  ```
 
 * **scenes**\
   Used to insert scene-names if using genericDeviceType to switch a LightScene-Device.\
