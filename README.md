@@ -14,6 +14,8 @@
 [Definition (DEF) in FHEM](#definition-def-in-fhem)\
 &nbsp;&nbsp;&nbsp;&nbsp;[Set-Commands (SET)](#set-commands-set)\
 &nbsp;&nbsp;&nbsp;&nbsp;[Attributes (ATTR)](#attributes-attr)\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Attribute *rhasspyTweaks*](#attribute-rhasspytweaks)\
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Attribute *rhasspyHotwords*](#attribute-rhasspyhotwords)\
 &nbsp;&nbsp;&nbsp;&nbsp;[Readings/Events](#readings--events)\
 [Configure FHEM-devices for use with Rhasspy](#configure-fhem-devices-for-use-with-rhasspy)\
 &nbsp;&nbsp;&nbsp;&nbsp;[Attribute *genericDeviceType*](#attribute-genericdevicetype)\
@@ -135,7 +137,7 @@ hermes/dialogueManager/sessionEnded
 You can define a new instance of this module with:
 
 ```
-define <name> RHASSPY <baseUrl> <devspec> <defaultRoom> <language> <fhemId> <prefix> <useGenericAttrs> <encoding>
+define <name> RHASSPY <baseUrl> <devspec> <defaultRoom> <language> <fhemId> <prefix> <useGenericAttrs> <encoding> <handleHotword>
 ```
 
 All parameters are optional but changing some of them later may result in confusing results. So it's recommended to especially check if _fhemId_ and/or _prefix_ really have to be set different than the defaults. In most cases, these two are for advanced configuration (e.g. multiple languages), so when starting with RHASSPY, you may not care much about that.
@@ -163,6 +165,10 @@ All parameters are optional but changing some of them later may result in confus
 
 * **`encoding`**\
   If there are any problems with mutated vowels, it's possible to set a specific character encoding. Default is _utf8_.
+<!--
+* **`handleHotword`**\
+  Triggers the reading _hotword_ if a hotword is detected. See attribute [Attribute *rhasspyHotwords*](#attribute-rhasspyhotwords) for further details.
+-->
 
 Simple-Example for a define:
 ```
@@ -331,9 +337,10 @@ define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceT
     * **c**: Confirmation request: Command will only be executed, when separate confirmation is spoken. Value _c_ is either numeric or text. If numeric: Timeout to wait for automatic cancellation. If text: response to send to ask for confirmation. Only reliably works if dialogue management setting in Rhasspy is set to *Rhasspy*.
     * **ct**: Numeric value for timeout in seconds, default: 15
 
-* **rhasspyTweaks**\
-  Currently sets additional settings for timers and slot-updates to Rhasspy. May contain further custom settings in future versions like siteId2room info or code links, allowed commands, confirmation requests etc.
-  Could be the place to configure additional things like additional siteId2room info or code links, allowed commands, duration of SetTimer sounds, confirmation requests etc.\
+<!--* **rhasspyTweaks**\-->
+#### rhasspyTweaks
+Currently sets additional settings for timers and slot-updates to Rhasspy. May contain further custom settings in future versions like siteId2room info or code links, allowed commands, confirmation requests etc.
+Could be the place to configure additional things like additional siteId2room info or code links, allowed commands, duration of SetTimer sounds, confirmation requests etc.\
   * **timerLimits**\
     See intent [SetTimer](#settimer)
   * **timerSounds**\
@@ -351,7 +358,45 @@ define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceT
     Example:
 	
     `timeouts: confirm=25 default=30`
+  * **confirmIntents**\
+    If set, Rhasspy will ask for a confirmation if a specific intent is called.
+    This key may contain <Intent>=<regex> pairs beeing
 
+    * **Intent** one of the intents supporting confirmation feature (all set type intents) and
+    * **Regex** containing a regular expression matching to either the group name (for group intents) or the device name(s) - using a full match lookup. If intent and regex match, a confirmation will be requested.
+    Example:
+    ```
+    confirmIntents=SetOnOffGroup=light|blinds SetOnOff=blind.*
+    ```
+    To execute any action requiring confirmation, you have to send an _Mode:OK_ value by the ConfirmAction intent. Any other mode key sent to ConfirmAction intent will be interpretad as cancellation request. For cancellation, you may alternatively use the CancelAction intent.
+    Example:
+    ```
+    [de.fhem:ConfirmAction]
+    ( yes, please do it | go on | that's ok | yes, please ){Mode:OK}
+    ( don't do it after all ){Mode}
+    
+    [de.fhem:CancelAction]
+    ( let it be | oh no | cancel | cancellation ){Mode:Cancel}
+    ```
+
+#### rhasspyHotwords
+<!--* **rhasspyHotwords**\-->
+Used to send a command to FHEM as soon, as a specific hotword is detected.
+  On hotword per line. Syntax is either simple or an advanced version.
+  If used, a reading `hotword` is created and will contain the hotword and the siteId.
+  Examples:
+  ```
+  bumblebee_linux = set amplifier2 mute on
+  porcupine_linux = livingroom="set amplifier mute on" default={Log3($DEVICE,3,"device $DEVICE - room $ROOM - value $VALUE")}
+  ```
+  The simple example will run the command, as soon as the hotword `bumblebee_linux` is detected.
+  The advanced expample does only execute the command, if the `siteId` equals to `livingroom`.
+  `$DEVICE` is evaluated to `RHASSPY name`, `$ROOM` to `siteId` and `$VALUE` to the hotword.
+  `default` is optional and is used, if the delivered siteId does not match any siteIds defined here.
+  
+  *NOTE:* As all hotword messages are sent to a common topic structure, you may need additional measures to distinguish between several RHASSPY instances, e.g. by restricting subscriptions and/or using different entries in this attribute.
+
+  
 
 
 ### Readings / Events
