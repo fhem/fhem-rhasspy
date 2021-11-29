@@ -14,8 +14,6 @@
 [Definition (DEF) in FHEM](#definition-def-in-fhem)\
 &nbsp;&nbsp;&nbsp;&nbsp;[Set-Commands (SET)](#set-commands-set)\
 &nbsp;&nbsp;&nbsp;&nbsp;[Attributes (ATTR)](#attributes-attr)\
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Attribute *rhasspyTweaks*](#attribute-rhasspytweaks)\
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[Attribute *rhasspyHotwords*](#attribute-rhasspyhotwords)\
 &nbsp;&nbsp;&nbsp;&nbsp;[Readings/Events](#readings--events)\
 [Configure FHEM-devices for use with Rhasspy](#configure-fhem-devices-for-use-with-rhasspy)\
 &nbsp;&nbsp;&nbsp;&nbsp;[Attribute *genericDeviceType*](#attribute-genericdevicetype)\
@@ -337,10 +335,9 @@ define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceT
     * **c**: Confirmation request: Command will only be executed, when separate confirmation is spoken. Value _c_ is either numeric or text. If numeric: Timeout to wait for automatic cancellation. If text: response to send to ask for confirmation. Only reliably works if dialogue management setting in Rhasspy is set to *Rhasspy*.
     * **ct**: Numeric value for timeout in seconds, default: 15
 
-<!--* **rhasspyTweaks**\-->
-#### rhasspyTweaks
-Currently sets additional settings for timers and slot-updates to Rhasspy. May contain further custom settings in future versions like siteId2room info or code links, allowed commands, confirmation requests etc.
-Could be the place to configure additional things like additional siteId2room info or code links, allowed commands, duration of SetTimer sounds, confirmation requests etc.\
+* **rhasspyTweaks**\
+  Currently sets additional settings for timers and slot-updates to Rhasspy. May contain further custom settings in future versions like siteId2room info or code links, allowed commands, confirmation requests etc.
+  Could be the place to configure additional things like additional siteId2room info or code links, allowed commands, duration of SetTimer sounds, confirmation requests etc.\
   * **timerLimits**\
     See intent [SetTimer](#settimer)
   * **timerSounds**\
@@ -378,10 +375,27 @@ Could be the place to configure additional things like additional siteId2room in
     [de.fhem:CancelAction]
     ( let it be | oh no | cancel | cancellation ){Mode:Cancel}
     ```
+  * **confirmIntentResponses**\
+    By default, the answer/confirmation request will be some kind of echo to the originally spoken sentence ($rawInput as stated by DefaultConfirmationRequestRawInput key in responses). You may change this for each intent specified using $target, ($rawInput) and $Value als parameters.
+    Example:
+    ```
+    confirmIntentResponses=SetOnOffGroup="really switch group $target $Value" SetOnOff="confirm setting $target $Value"
+    ```
+    _$Value_ may be translated with defaults from a words key in languageFile, for more options on $Value and/or more specific settings in single devices see also confirmValueMap key in (rhasspySpecials)[#attribute-rhasspyspecials].
 
-#### rhasspyHotwords
-<!--* **rhasspyHotwords**\-->
-Used to send a command to FHEM as soon, as a specific hotword is detected.
+  * **intentFilter**\
+    At the moment Rhasspy will activate all known intents at startup. As some of the intents used by FHEM are only needed in case some dialogue is open, it will deactivate these intents (atm: _ConfirmAction_, _CancelAction_, _ChoiceRoom_ and _ChoiceDevice_ (including the additional parts derived from language and fhemId)) at startup or when no active filtering is detected. You may disable additional intents by just adding their names in intentFilter line or using an explicit state assignment in the form intentname=true (Note: activating the 4 mentionned intents is not possible!). For details on how configure works see (Rhasspy documentation)[https://rhasspy.readthedocs.io/en/latest/reference/#dialogue-manager].
+  * **ignoreKeywords**\
+    You may have also some technically motivated settings in the attributes RHASSPY uses to generate slots, e.g. _MQTT_, _alexa_, _homebridge_ or _googleassistant_ in _room_ attribute. The key-value pairs will sort the given value out while generating the content for the respective slot for key (atm. only rooms and group are supported). value will be treated as (case-insensitive) regex with need to exact match.
+    Example:
+    ```
+    ignoreKeywords=room=MQTT|alexa|homebridge|googleassistant|logics-.*
+    ```
+    *Note:* requires restart to take full effect, will only affect content from general room, group or alexaRoom attributes.
+
+
+* **rhasspyHotwords**\
+  Used to send a command to FHEM as soon, as a specific hotword is detected.
   On hotword per line. Syntax is either simple or an advanced version.
   If used, a reading `hotword` is created and will contain the hotword and the siteId.
   Examples:
