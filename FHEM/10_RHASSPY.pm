@@ -349,7 +349,7 @@ sub Define {
 
     $hash->{defaultRoom} = $defaultRoom;
     my $language = $h->{language} // shift @{$anon} // lc AttrVal('global','language','en');
-    $hash->{MODULE_VERSION} = '0.5.03';
+    $hash->{MODULE_VERSION} = '0.5.04';
     $hash->{baseUrl} = $Rhasspy;
     initialize_Language($hash, $language) if !defined $hash->{LANGUAGE} || $hash->{LANGUAGE} ne $language;
     $hash->{LANGUAGE} = $language;
@@ -998,6 +998,9 @@ sub _analyze_rhassypAttr {
         if ($key eq 'colorTempMap') {
             $hash->{helper}{devicemap}{devices}{$device}{color_specials}{Colortemp} = $named if defined $named;
         }
+        if ($key eq 'numericValueMap') {
+            $hash->{helper}{devicemap}{devices}{$device}{numeric_ValueMap} = $named if defined $named;
+        }
         if ($key eq 'venetianBlind') {
             my $specials = {};
             my $vencmd = $named->{setter} // shift @{$unnamed};
@@ -1059,6 +1062,9 @@ sub _analyze_genDevType {
         push @names, split m{;}x, lc $attrv if $attrv;
 
         $attrv = AttrVal($device,'siriName',undef);
+        push @names, split m{,}x, lc $attrv if $attrv;
+
+        $attrv = AttrVal($device,'gassistantName',undef);
         push @names, split m{,}x, lc $attrv if $attrv;
 
         my $alias = lc AttrVal($device,'alias',$device);
@@ -3426,6 +3432,8 @@ sub handleIntentSetNumeric {
     my $part    = $mapping->{part};
     my $minVal  = $mapping->{minVal};
     my $maxVal  = $mapping->{maxVal};
+    my $useMap  = defined $hash->{helper}{devicemap}{devices}{$device}->{numeric_ValueMap} 
+                  && defined $hash->{helper}{devicemap}{devices}{$device}->{numeric_ValueMap}->{$value} ? $hash->{helper}{devicemap}{devices}{$device}->{numeric_ValueMap}->{$value} : undef;
 
     $minVal     =   0 if defined $minVal && !looks_like_number($minVal);
     $maxVal     = 100 if defined $maxVal && !looks_like_number($maxVal);
@@ -3474,9 +3482,9 @@ sub handleIntentSetNumeric {
     } else { # defined $change
         # Stellwert um Wert x ändern ("Mache Lampe um 20 heller" oder "Mache Lampe heller")
         #elsif ((!defined $unit || $unit ne 'Prozent') && defined $change && !$forcePercent) {
-        if ( $change eq 'cmdStop' ) {
-            $newVal = $oldVal;
-        } elsif ( ( !defined $unit || !$ispct ) && !$forcePercent ) {
+        if ( $change eq 'cmdStop' || $useMap ) {
+            $newVal = $oldVal // 50;
+        } elsif ( ( !defined $unit || !$ispct ) && !$forcePercent ) {        } elsif ( ( !defined $unit || !$ispct ) && !$forcePercent ) {
             $newVal = ($up) ? $oldVal + $diff : $oldVal - $diff;
         }
         # Stellwert um Prozent x ändern ("Mache Lampe um 20 Prozent heller" oder "Mache Lampe um 20 heller" bei forcePercent oder "Mache Lampe heller" bei forcePercent)
@@ -3504,7 +3512,8 @@ sub handleIntentSetNumeric {
     # execute Cmd
     $change ne 'cmdStop'
             || !defined $mapping->{cmdStop}
-            ? analyzeAndRunCmd($hash, $device, $cmd, $newVal)
+            ? !defined $useMap ? analyzeAndRunCmd($hash, $device, $cmd, $newVal)
+                               : analyzeAndRunCmd($hash, $device, $useMap)
             : analyzeAndRunCmd($hash, $device, $mapping->{cmdStop});
 
     #venetian blind special
@@ -5058,8 +5067,14 @@ yellow=rgb FFFF00</code></p>
         <p>Example:</p>
         <p><code>attr lamp1 rhasspySpecials group:async_delay=100 prio=1 group=lights</code></p>
       </li>
+      <li><b>numericValueMap</b>
+        <p>Allows mapping of numeric values from the <i>Value</i> key to individual commands. Might e.g. usefull to address special positioning commands for blinds.</p>
+        <p>Example:</p>
+        <p><code>attr blind1 rhasspySpecials numericValueMap:10='Event Slit' 50='myPosition'</code></p>
+         <p>Note: will lead to e.g. <code>set blind1 Event Slit</code> when numeric value 10 is received in {Value} key.</p>
+      </li>
       <li><b>venetianBlind</b>
-        <p><code>attr blind1 rhasspySpecials venetianBlind:setter=dim device=blind1_slats</code></p>
+        <p><code>attr blind1 rhasspySpecials venetianBlind:setter=dim device=blind1_slats stopCommand="set blind1_slats dim [blind1_slats:dim]"</code></p>
         <p>Explanation (one of the two arguments is mandatory):
         <ul>
           <li><b>setter</b> is the set command to control slat angle, e.g. <i>positionSlat</i> for CUL_HM or older ZWave type devices</li>
@@ -5070,9 +5085,13 @@ yellow=rgb FFFF00</code></p>
         <p>If set, the slat target position will be set to the same level than the main device.</p>
       </li>
       <li><b>colorCommandMap</b>
-        <p>Allows mapping of values from the <i>Color></i> key to individual commands.</p>
+        <p>Allows mapping of values from the <i>Color</i> key to individual commands.</p>
         <p>Example:</p>
         <p><code>attr lamp1 rhasspySpecials colorCommandMap:0='rgb FF0000' 120='rgb 00FF00' 240='rgb 0000FF'</code></p>
+      </li>
+      <li><b>colorTempMap</b>
+        <p>Allows mapping of values from the <i>Colortemp</i> key to individual commands.</p>
+        Works similar to colorCommandMap</p>
       </li>
       <li><b>colorForceHue2rgb</b>
         <p>Defaults to "0". If set, a rgb command will be issued, even if the device is capable to handle hue commands.</p>
