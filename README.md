@@ -113,8 +113,13 @@ define <deviceName> MQTT2_CLIENT <ip-or-hostname-of-mqtt-server>:<port>
 attr <deviceName> clientOrder RHASSPY MQTT_GENERIC_BRIDGE MQTT2_DEVICE
 ```
 - Add MQTT-subscriptions needed for this module:
+Either
 ```
 attr <deviceName> subscriptions hermes/intent/+ hermes/dialogueManager/sessionStarted hermes/dialogueManager/sessionEnded
+```
+or if this MQTT2_CLIENT is only used by RHASSPY
+```
+attr rhasspyMQTT2 subscriptions setByTheProgram
 ```
 
 **Important**: The attribute `clientOrder` ist not available in older version of MQTT2_CLIENT. Be sure to use an up-to-date version of this module.
@@ -129,6 +134,8 @@ In case you are using the MQTT server also for other purposes than Rhasspy, you 
 hermes/intent/+
 hermes/dialogueManager/sessionStarted
 hermes/dialogueManager/sessionEnded
+hermes/nlu/intentNotRecognized
+hermes/hotword/+/detected
 ```
 
 ## Definition (DEF) in FHEM
@@ -241,6 +248,8 @@ define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceT
     Reinitialization of language file.\
     Be sure to execute this command after changing something in the language-configuration file or the attribute `languageFile`!\
     Example: `set <rhasspyDevice> update language`
+  * **intent_filter**\
+    Reset intent filters used by Rhasspy dialogue manager. See intentFilter in rhasspyTweaks attribute for details.
   * **all**\
     Update devicemap and language.\
     Example: `set <rhasspyDevice> update all`
@@ -438,6 +447,8 @@ define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceT
   Contains the last response ot the `updateSlots` command.`
 * **updateSlots**\
   Contains the last response ot the `updateSlots` command.`
+* **hotword**\
+  If activated, contains the last used hotword and siteId.
 
 
 ## Configure FHEM-devices for use with Rhasspy
@@ -584,19 +595,35 @@ All of the following options are optional.
   Example:\
   `attr lamp1 rhasspySpecials group:async_delay=100 prio=1 group=lights`
 
+* **numericValueMap**\
+  Allows mapping of numeric values from the _Value_ key to individual commands. Might e.g. usefull to address special positioning commands for blinds.
+  Example:
+  ```
+  attr blind1 rhasspySpecials numericValueMap:10='Event Slit' 50='myPosition'
+  ```
+  Note: will lead to e.g. `set blind1 Event Slit` when numeric value 10 is received in {Value} key.
+
 * **venetianBlind**\
-  `attr blind1 rhasspySpecials venetianBlind:setter=dim device=blind1_slats`
+  `attr blind1 rhasspySpecials venetianBlind:setter=dim device=blind1_slats stopCommand="set blind1_slats dim [blind1_slats:dim]"`
 
   Explanation (one of the two arguments is mandatory):
 
   * **setter** is the set command to control slat angle, e.g. positionSlat for CUL_HM or older ZWave type devices
-  * **device** is needed if the slat command has to be issued towards a different device (applies e.g. to newer ZWave type devices). If set, the slat target position will be set to the same level than the main device.
-
+  * **device** is needed if the slat command has to be issued towards a different device (applies e.g. to newer ZWave type devices)
+  * **CustomCommand** arbitrary command defined by the user. Note: no variables will be evaluated. Will be executed if a regular nummeric command is detected
+  * **stopCommand** arbitrary command defined by the user. Note: no variables will be evaluated. Will be executed if a stop command is detected
+  
+  If set, the slat target position will be set to the same level than the main device.
+  
 * **colorCommandMap**\
   Allows mapping of values from the Color key to individual commands.
 
   Example:\
   `attr lamp1 rhasspySpecials colorCommandMap:0='rgb FF0000' 120='rgb 00FF00' 240='rgb 0000FF'`
+
+* **colorTempMap**\
+  Allows mapping of values from the Colortemp key to individual commands.
+  Works similar to colorCommandMap
 
 * **colorForceHue2rgb**\
   Defaults to "0". If set, a rgb command will be issued, even if the device is capable to handle hue commands.
@@ -609,6 +636,16 @@ All of the following options are optional.
 
   Example:\
   `attr sensor_outside_main rhasspySpecials priority:inRoom=temperature outsideRoom=temperature,humidity,pressure`
+
+* **confirm**\
+  This is the more granular alternative to confirmIntents key in rhasspyTweaks (including confirmIntentResponses). You may provide intent names only or <Intent>=<response> pairs like `confirm: SetOnOff="$target shall be switched $Value" SetScene`.
+
+* **confirmValueMap**\
+  Provide a device specific translation for $Value, e.g. for a blind type device rhasspySpecials could look like:
+  ```
+  confirm: SetOnOff="really $Value $target"
+  confirmValueMap: on=open off=close
+  ```
 
 * **scenes**\
   Used to insert scene-names if using genericDeviceType to switch a LightScene-Device.\
