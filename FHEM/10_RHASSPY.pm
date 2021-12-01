@@ -208,43 +208,6 @@ my $internal_mappings = {
   }
 };
 
-my $de_mappings = {
-  'on'      => 'an',
-  'percent' => 'Prozent',
-  'stateResponseType' => {
-    'an'            => 'onOff',
-    'aus'           => 'onOff',
-    'auf'           => 'openClose',
-    'zu'            => 'openClose',
-    'eingefahren'   => 'inOut',
-    'ausgefahren'   => 'inOut',
-    'läuft'         => 'inOperation',
-    'fertig'        => 'inOperation'
-  },
-  'ToEn' => {
-    'Temperatur'       => 'temperature',
-    'Luftfeuchtigkeit' => 'humidity',
-    'Batterie'         => 'battery',
-    'Wasserstand'      => 'waterLevel',
-    'Bodenfeuchte'     => 'soilMoisture',
-    'Helligkeit'       => 'brightness',
-    'Sollwert'         => 'setTarget',
-    'Lautstärke'       => 'volume',
-    'kälter' => 'tempDown',
-    'wärmer' => 'tempUp',
-    'dunkler' => 'lightDown',
-    'heller' => 'lightUp',
-    'lauter' => 'volUp',
-    'leiser' => 'volDown',
-
-  },
-  'regex' => {
-    'upward' => '(höher|heller|lauter|wärmer)',
-    'setTarget' => '(Helligkeit|Lautstärke|Sollwert)'
-  }
-
-};
-
 BEGIN {
 
   GP_Import( qw(
@@ -349,7 +312,7 @@ sub Define {
 
     $hash->{defaultRoom} = $defaultRoom;
     my $language = $h->{language} // shift @{$anon} // lc AttrVal('global','language','en');
-    $hash->{MODULE_VERSION} = '0.5.05';
+    $hash->{MODULE_VERSION} = '0.5.05a';
     $hash->{baseUrl} = $Rhasspy;
     initialize_Language($hash, $language) if !defined $hash->{LANGUAGE} || $hash->{LANGUAGE} ne $language;
     $hash->{LANGUAGE} = $language;
@@ -965,10 +928,7 @@ sub _analyze_rhassypAttr {
         my %currentMapping = splitMappingString($val);
         next if !%currentMapping;
         # Übersetzen, falls möglich:
-        $currentMapping{type} = 
-            defined $currentMapping{type} ?
-            $de_mappings->{ToEn}->{$currentMapping{type}} // $currentMapping{type} // $key
-            : $key;
+        $currentMapping{type} = $currentMapping{type} // $key;
         $hash->{helper}{devicemap}{devices}{$device}{intents}{$key}->{$currentMapping{type}} = \%currentMapping;
     }
 
@@ -1101,11 +1061,12 @@ sub _analyze_genDevType {
     my $allset = getAllSets($device);
     my $currentMapping;
 
-    if ( ($gdt eq 'switch' || $gdt eq 'light') && $allset =~ m{\bo[nf]+([\b:\s]|\Z)}xms ) {
+    if ( $gdt eq 'switch' || $gdt eq 'light') {
+        my ($on, $off) = _getGenericOnOff($allset);
         $currentMapping = 
-            { GetOnOff => { GetOnOff => {currentVal => 'state', type => 'GetOnOff', valueOff => 'off'}}, 
-              SetOnOff => { SetOnOff => {cmdOff => 'off', type => 'SetOnOff', cmdOn => 'on'}}
-            };
+            { GetOnOff => { GetOnOff => {currentVal => 'state', type => 'GetOnOff', valueOff => lc $off }}, 
+              SetOnOff => { SetOnOff => {cmdOff => $off, type => 'SetOnOff', cmdOn => $on}}
+            } if defined $on;
         if ( $gdt eq 'light' && $allset =~ m{\bdim([\b:\s]|\Z)}xms ) {
             my $maxval = InternalVal($device, 'TYPE', 'unknown') eq 'ZWave' ? 99 : 100;
             $currentMapping->{SetNumeric} = {
@@ -1169,6 +1130,12 @@ sub _analyze_genDevType {
             SetOnOff => { SetOnOff => {cmdOff => 'pct 0', type => 'SetOnOff', cmdOn => 'pct 100'} },
             SetNumeric => { setTarget => { cmd => 'pct', currentVal => 'pct', maxVal => '100', minVal => '0', step => '13', type => 'setTarget'} }
             };
+        } else {
+            my ($on, $off) = _getGenericOnOff($allset);
+            $currentMapping = { 
+                GetOnOff => { GetOnOff => {currentVal => 'state', type => 'GetOnOff', valueOff => lc $off }}, 
+                SetOnOff => { SetOnOff => {cmdOff => $off, type => 'SetOnOff', cmdOn => $on}}
+              } if defined $on;
         }
         if ( $allset =~ m{\b(stop)([\b:\s]|\Z)}xmsi ) {
             $currentMapping->{SetNumeric}->{setTarget}->{cmdStop} = $1;
@@ -1205,6 +1172,26 @@ sub _analyze_genDevType {
         return;
     }
     return;
+}
+
+sub _getGenericOnOff {
+    my $allset = shift // return (undef,undef);
+    my $onoff_map= {
+        'on'    => 'off',
+        'open'  => 'close',
+        '1'     => '0',
+        'an'    => 'aus',
+        'auf'   => 'zu',
+        'offen' => 'zu'
+        };
+    my @onwords = qw(on open an auf 1);
+    for (@onwords) {
+        next if $allset !~ m{\b($_)([\b:\s]|\Z)}xmsi;
+        my $on = $1;
+        next if $allset !~ m{\b($onoff_map->{$_})([\b:\s]|\Z)}xmsi;
+        return ($on,$1);
+    }
+    return (undef,undef);
 }
 
 sub _clean_ignored_keywords {
@@ -2007,14 +1994,11 @@ sub getMapping {
         my %currentMapping = splitMappingString($_);
 
         # Erstes Mapping vom passenden Intent wählen (unabhängig vom Type), dann ggf. weitersuchen ob noch ein besserer Treffer mit passendem Type kommt
-        if (!defined $matchedMapping 
-            || lc($matchedMapping->{type}) ne lc($type) && lc($currentMapping{type}) eq lc($type)
-            || $de_mappings->{ToEn}->{$matchedMapping->{type}} ne $type && $de_mappings->{ToEn}->{$currentMapping{type}} eq $type
-            ) {
-            $matchedMapping = \%currentMapping;
-            #Beta-User: könnte man ergänzen durch den match "vorne" bei Reading, kann aber sein, dass es effektiver geht, wenn wir das künftig sowieso anders machen...
-
-            Log3($hash->{NAME}, 5, "${prefix}Mapping selected: $_") if !$disableLog;
+        if ( !defined $matchedMapping 
+              || lc($matchedMapping->{type}) ne lc($type) && lc($currentMapping{type}) eq lc($type) ) {
+              $matchedMapping = \%currentMapping;
+              #Beta-User: könnte man ergänzen durch den match "vorne" bei Reading, kann aber sein, dass es effektiver geht, wenn wir das künftig sowieso anders machen...
+              Log3($hash->{NAME}, 5, "${prefix}Mapping selected: $_") if !$disableLog;
         }
     }
     return $matchedMapping;
@@ -3001,7 +2985,6 @@ sub handleIntentSetOnOff {
     if ( exists $data->{Device} && exists $data->{Value} ) {
         $room = getRoomName($hash, $data);
         $value = $data->{Value};
-        $value = $value eq $de_mappings->{on} ? 'on' : $value; #Beta-User: compability
         $device = getDeviceByName($hash, $room, $data->{Device});
         $mapping = getMapping($hash, $device, 'SetOnOff', undef, defined $hash->{helper}{devicemap});
 
@@ -3058,7 +3041,6 @@ sub handleIntentSetOnOffGroup {
     my $delaysum = 0;
     
     my $value = $data->{Value};
-    $value = $value eq $de_mappings->{on} ? 'on' : $value;
 
     my $updatedList;
 
@@ -3111,7 +3093,6 @@ sub handleIntentSetTimedOnOff {
     if ( exists $data->{Device} && exists $data->{Value} ) {
         $room = getRoomName($hash, $data);
         $value = $data->{Value};
-        $value = $value eq $de_mappings->{on} ? 'on' : $value; #Beta-User: compability
         $device = getDeviceByName($hash, $room, $data->{Device});
         $mapping = getMapping($hash, $device, 'SetOnOff', undef, defined $hash->{helper}{devicemap});
 
@@ -3211,7 +3192,6 @@ sub handleIntentSetTimedOnOffGroup {
     my $delaysum = 0;
 
     my $value = $data->{Value};
-    $value = $value eq $de_mappings->{on} ? 'on' : $value;
 
     my $updatedList;
 
@@ -3285,7 +3265,7 @@ sub handleIntentGetOnOff {
                 $response = _getValue($hash, $device, $mapping->{response}, $value, $room); 
             }
             else {
-                my $stateResponseType = $internal_mappings->{stateResponseType}->{$status} // $de_mappings->{stateResponseType}->{$status};
+                my $stateResponseType = $internal_mappings->{stateResponseType}->{$status};
                 $response = $hash->{helper}{lng}->{stateResponses}{$stateResponseType}->{$value};
                 $response =~ s{(\$\w+)}{$1}eegx;
             }
@@ -3300,25 +3280,18 @@ sub handleIntentGetOnOff {
 
 sub isValidData {
     my $data = shift // return 0;
-    my $validData = 0;
-    
-    $validData = 1 if exists $data->{Device} && ( exists $data->{Value} || exists $data->{Change}) #);
 
-    # Mindestens Device und Change angegeben -> Valid (z.B. Radio lauter)
-    #|| exists $data->{Device} && exists $data->{Change}
-    # Nur Change für Lautstärke angegeben -> Valid (z.B. lauter)
-    #|| !exists $data->{Device} && defined $data->{Change} 
-    #    && defined $hash->{helper}{lng}->{regex}->{$data->{Change}}
-    || !exists $data->{Device} && defined $data->{Change} 
-        && (defined $internal_mappings->{Change}->{$data->{Change}} ||defined $de_mappings->{ToEn}->{$data->{Change}})
-        #$data->{Change}=  =~ m/^(lauter|leiser)$/i);
+    return 1 if 
+        exists $data->{Device} && ( exists $data->{Value} || exists $data->{Change})
+        || !exists $data->{Device} && defined $data->{Change} 
+            && defined $internal_mappings->{Change}->{$data->{Change}}
 
-    # Nur Type = Lautstärke und Value angegeben -> Valid (z.B. Lautstärke auf 10)
-    #||!exists $data->{Device} && defined $data->{Type} && exists $data->{Value} && $data->{Type} =~ 
-    #m{\A$hash->{helper}{lng}->{Change}->{regex}->{volume}\z}xim;
-    || !exists $data->{Device} && defined $data->{Type} && exists $data->{Value} && ( $data->{Type} eq 'volume' || $data->{Type} eq 'Lautstärke' );
+        # Nur Type = Lautstärke und Value angegeben -> Valid (z.B. Lautstärke auf 10)
+        #||!exists $data->{Device} && defined $data->{Type} && exists $data->{Value} && $data->{Type} =~ 
+        #m{\A$hash->{helper}{lng}->{Change}->{regex}->{volume}\z}xim;
+        || !exists $data->{Device} && defined $data->{Type} && exists $data->{Value} && $data->{Type} eq 'volume';
 
-    return $validData;
+    return 0;
 }
 
 sub handleIntentSetNumericGroup {
@@ -3347,7 +3320,6 @@ sub handleIntentSetNumericGroup {
     my $delaysum = 0;
 
     my $value = $data->{Value};
-    $value = $value eq $de_mappings->{on} ? 'on' : $value;
 
     my $updatedList;
 
@@ -3398,8 +3370,7 @@ sub handleIntentSetNumeric {
     my $change = $data->{Change};
     my $type   = $data->{Type};
     if ( !defined $type && defined $change ){
-        $type   = $internal_mappings->{Change}->{$change}->{Type} 
-                // $internal_mappings->{Change}->{$de_mappings->{ToEn}->{$change}}->{Type};
+        $type   = $internal_mappings->{Change}->{$change}->{Type};
     }
     my $value  = $data->{Value};
     my $room   = getRoomName($hash, $data);
@@ -3444,8 +3415,7 @@ sub handleIntentSetNumeric {
     my $up = $change // 0;
     if ( defined $change ) {
         $up = $internal_mappings->{Change}->{$change}->{up} 
-             // $internal_mappings->{Change}->{$de_mappings->{ToEn}->{$change}}->{up}
-             // ( $change =~ m{\A$internal_mappings->{regex}->{upward}\z}xi || $change =~ m{\A$de_mappings->{regex}->{upward}\z}xi ) ? 1 : 0;
+             // $change =~ m{\A$internal_mappings->{regex}->{upward}\z}xi ? 1 : 0;
     }
 
     my $forcePercent = ( defined $mapping->{map} && lc $mapping->{map} eq 'percent' ) ? 1 : 0;
@@ -3460,7 +3430,7 @@ sub handleIntentSetNumeric {
 
     # Neuen Wert bestimmen
     my $newVal;
-    my $ispct = defined $unit && ( $unit eq 'percent' || $unit eq $de_mappings->{percent} ) ? 1 : 0;
+    my $ispct = defined $unit && $unit eq 'percent' ? 1 : 0;
 
     if ( !defined $change ) {
         # Direkter Stellwert ("Stelle Lampe auf 50")
@@ -3614,19 +3584,14 @@ sub handleIntentGetNumeric {
 
     # Antwort falls mappingType oder type matched
     my $response = 
-        $responses->{$mappingType}
-        //  $responses->{$de_mappings->{ToEn}->{$mappingType}}
-        //  $responses->{$type}
-        //  $responses->{$de_mappings->{ToEn}->{$type}};
+        $responses->{$mappingType} // $responses->{$type};
         $response = $response->{$isNumber} if ref $response eq 'HASH';
 
     # Antwort falls mappingType auf regex (en bzw. de) matched
-    if (!defined $response && (
-            $mappingType=~ m{\A$internal_mappings->{regex}->{setTarget}\z}xim 
-            || $mappingType=~ m{\A$de_mappings->{regex}->{setTarget}\z}xim)) { 
+    if ( !defined $response && $mappingType=~ m{\A$internal_mappings->{regex}->{setTarget}\z}xim ) {
         $response = $responses->{setTarget};
     }
-    if (!defined $response) {
+    if ( !defined $response ) {
         #or not and at least know the type...?
         $response = defined $mappingType
             ? $responses->{knownType}
