@@ -193,7 +193,7 @@ define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceT
   Creates a new - or overwrites an existing slot - in Rhasspy\
   Provide slotname, slotdata and (optional) info, if existing data shall be overwritten and training shall be initialized immediately afterwards.\
   First two arguments are required, third and fourth are optional.\
-  `overwrite` defaults to true, setting any other value than true will keep existing Rhasspy slot data.\
+  `overwrite` defaults to true, setting any other value than true will keep existing Rhasspy slot data.
 
   Examples:\
   `set <rhasspyDevice> customSlot mySlot a,b,c overwrite training`\
