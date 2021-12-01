@@ -170,10 +170,10 @@ All parameters are optional but changing some of them later may result in confus
 
 * **`encoding`**\
   If there are any problems with mutated vowels, it's possible to set a specific character encoding. Default is _utf8_.
-<!--
+
 * **`handleHotword`**\
-  Triggers the reading _hotword_ if a hotword is detected. See attribute [Attribute *rhasspyHotwords*](#attribute-rhasspyhotwords) for further details.
--->
+  Triggers the reading _hotword_ if a hotword is detected. See attribute [Attribute *rhasspyHotwords*](#attribute-rhasspyhotwords) for further details. Default is 0.
+
 
 Simple-Example for a define:
 ```
@@ -182,7 +182,7 @@ define Rhasspy RHASSPY
 
 Full-Example for a define:
 ```
-define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceType=.+ defaultRoom=wohnzimmer language=de fhemId=fhem1 prefix=rhasspy2 useGenericAttrs=0 encoding=cp-1252
+define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceType=.+ defaultRoom=wohnzimmer language=de fhemId=fhem1 prefix=rhasspy2 useGenericAttrs=0 encoding=cp-1252 handleHotword=1
 ```
 
 **Important**: After defining the device, it's recommended to set the attribute `IODev`, e.g. with `attr <deviceName> IODev <MQTT2_CLIENT deviceName>`.
