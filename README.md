@@ -1,6 +1,8 @@
 # FHEM-rhasspy
 [FHEM](https://fhem.de) module for [Rhasspy](https://github.com/rhasspy)
 
+For a german version of this README see [FHEM Wiki](https://wiki.fhem.de/wiki/RHASSPY)
+
 ## Contents
 [Read First](#Read-First)\
 [About Rhasspy](#About-Rhasspy)\
