@@ -5239,7 +5239,7 @@ https://svn.fhem.de/trac/browser/trunk/fhem/contrib/RHASSPY">svn contrib</a>.<br
 
 <a id="RHASSPY-define"></a>
 <h4>Define</h4>
-<p><code>define &lt;name&gt; RHASSPY &lt;baseUrl&gt; &lt;devspec&gt; &lt;defaultRoom&gt; &lt;language&gt; &lt;fhemId&gt; &lt;prefix&gt; &lt;useGenericAttrs&gt; &lt;handleHotword&gt; &lt;encoding&gt;</code></p>
+<p><code>define &lt;name&gt; RHASSPY &lt;baseUrl&gt; &lt;devspec&gt; &lt;defaultRoom&gt; &lt;language&gt; &lt;fhemId&gt; &lt;prefix&gt; &lt;useGenericAttrs&gt; &lt;handleHotword&gt; &lt;Babble&gt; &lt;encoding&gt;</code></p>
 <p><b>All parameters in define are optional, most will not be needed (!)</b>, but keep in mind: changing them later might lead to confusing results for some of them! Especially when starting with RHASSPY, do not set any other than the first three (or four if your language is neither english nor german) of these at all!</p>
 <p><b>Remark:</b><br><a id="RHASSPY-parseParams"></a>
 RHASSPY uses <a href="https://wiki.fhem.de/wiki/DevelopmentModuleAPI#parseParams"><b>parseParams</b></a> at quite a lot places, not only in define, but also to parse attribute values.<br>
@@ -5258,6 +5258,8 @@ So all parameters in define should be provided in the <i>key=value</i> form. In 
   <a id="RHASSPY-genericDeviceType"></a>
   <li><b>useGenericAttrs</b>: Formerly, RHASSPY only used it's own attributes (see list below) to identifiy options for the subordinated devices you want to control. Today, it is capable to deal with a couple of commonly used <code>genericDeviceType</code> (<i>switch</i>, <i>light</i>, <i>thermostat</i>, <i>thermometer</i>, <i>blind</i> and <i>media</i>), so it will add <code>genericDeviceType</code> to the global attribute list and activate RHASSPY's feature to estimate appropriate settings - similar to rhasspyMapping. <code>useGenericAttrs=0</code> will deactivate this. (do not set this unless you know what you are doing!). Note: <code>homebridgeMapping</code> atm. is not used as source for appropriate mappings in RHASSPY.</li>
   <li><b>handleHotword</b>: Trigger Reading <i>hotword</i> in case of a hotword is detected. See attribute <a href="#RHASSPY-attr-rhasspyHotwords">rhasspyHotwords</a> for further reference.</li>
+  <li><b>Babble</b>: Points to a <a href="#Babble ">Babble</a> device. Atm. only used in case if text input from an <a href="#AMADCommBridge">AMADCommBridge</a> is processed, see <a href="#RHASSPY-attr-rhasspySTT">rhasspySTT</a> for details.</li>
+
   <li><b>encoding</b>: May be helpfull in case you experience problems in conversion between RHASSPY (module) and Rhasspy (service). Example: <code>encoding=cp-1252</code>. Do not set this unless you experience encoding problems!</li>
 </ul>
 
@@ -5561,7 +5563,7 @@ i="i am hungry" f="set Stove on" d="Stove" c="would you like roast pork"</code><
       </li>
     </ul>
   </li>
-    <li>
+  <li>
     <a id="RHASSPY-attr-rhasspyHotwords"></a><b>rhasspyHotwords</b>
     <p>Define custom reactions as soon as a specific hotword is detected. This does not require any specific configuration on any other FHEM device.<br>
     One hotword per line, syntax is either a simple and an extended version.</p>
@@ -5570,9 +5572,9 @@ i="i am hungry" f="set Stove on" d="Stove" c="would you like roast pork"</code><
         porcupine_linux = livingroom="set amplifier mute on" default={Log3($DEVICE,3,"device $DEVICE - room $ROOM - value $VALUE")}</code></p>
     <p>First example will execute the command for all incoming messages for the respective hotword, second will decide based on the given <i>siteId</i> keyword; $DEVICE is evaluated to RHASSPY name, $ROOM to siteId and $VALUE to the hotword.<br>
     <i>default</i> is optional. If set, this action will be executed for all <i>siteIds</i> without match to other keywords.<br>
-    Additionally, if either <i>rhasspyHotwords</i> ia set or key <i>handleHotword</i> in DEF is activated, the reading <i>hotword</i> will be filled with <i>hotword</i> plus <i>siteId</i> to also allow arbitrary event handling.<br>NOTE: As all hotword messages are sent to a common topic structure, you may need additional measures to distinguish between several <i>RHASSPY</i> instances, e.g. by restricting subscriptions and/or using different entries in this attribute.</p>
+    Additionally, if either <i>rhasspyHotwords</i> ia set or key <i>handleHotword</i> in <a href="#RHASSPY-define">DEF</a> is activated, the reading <i>hotword</i> will be filled with <i>hotword</i> plus <i>siteId</i> to also allow arbitrary event handling.<br>NOTE: As all hotword messages are sent to a common topic structure, you may need additional measures to distinguish between several <i>RHASSPY</i> instances, e.g. by restricting subscriptions and/or using different entries in this attribute.</p>
   </li>
-    <li>
+  <li>
     <a id="RHASSPY-attr-rhasspyMsgDialog"></a><b>rhasspyMsgDialog</b>
     <p>If some key in this attribute are set, RHASSPY will react somehow like a <a href="#msgDialog">msgDialog</a> device. This needs some configuration in the central <a href="#msgConfig">msgConfig</a> device first, and additionally for each RHASSPY instance a siteId has to be added to the intent recognition service.</p>
     Keys that may be set in this attribute:
@@ -5585,7 +5587,32 @@ i="i am hungry" f="set Stove on" d="Stove" c="would you like roast pork"</code><
         <li><i>msgCommand</i> the fhem-command to be used to send messages to the messenger service.</li>
         <li><i>siteId</i> the siteId to be used by this RHASSPY instance to identify it as satellite in the Rhasspy ecosystem</li>
         <li><i>querymark</i> Text pattern that shall be used to distinguish the queries done in intent MsgDialog from others (for the future: will be added to all requests towards Rhasspy intent recognition system automatically; not functional atm.)</li>
+        <br>
       </ul>
+  </li>
+  <li>
+    <a id="RHASSPY-attr-rhasspySTT"></a><b>rhasspySTT</b>
+    <p>Optionally, you may want not to use the internal Rhasspy speach-to-text engine provided by Rhasspy (for one or several siteId's), but provide  simple text to be forwarded to Rhasspy for intent recognition. Atm. only "AMAD" is supported for this feature, and most likely you also want to set values to <a href="#RHASSPY-attr-rhasspyTTS">rhasspyTTS</a> as well. For generic "msg" (and text messenger) support see <a href="#RHASSPY-attr-rhasspyMsgDialog">rhasspyMsgDialog</a> <br>Note: You will have to (de-) activate these parts of the Rhasspy ecosystem for the respective satellites manually!</p>
+    Keys that may be set in this attribute:
+     <ul>
+        <li><i>allowed</i> A list of <a href="#AMADDevice">AMADDevice</a> devices allowed to interact with RHASSPY (comma-separated device names). This ist the only <b>mandatory</b> key to be set.</li>
+        <li><i>AMADCommBridge</i> A list of <a href="#AMADCommBridge">AMADCommBridge</a> devices RHASSPY shall be notified on incoming messages (comma-separated device names).</li>
+        <li><i>filterFromBabble</i> 
+        By default, all incoming messages from AMADDevice/AMADCommBridge will be forwarded to Rhasspy. For better interaction with <a href="#Babble ">Babble</a> you may opt to ignore all messages not matching the <i>filterFromBabble</i> by their starting words (case-agnostic, will be converted to a regex compatible notation). You additionally have to set a <i>Babble</i> key in <a href="#RHASSPY-define">DEF</a> pointing to the Babble device. All regular messages (start sequence not matching filter) then will be forwarded to Babble using <code>Babble_DoIt()</code> function.</li>
+      </ul>
+      Example:<br>
+        <p><code>filterFromBabble=tell rhasspy <br>
+                 AMADCommBridge=AMADBridge<br>
+                 allowed=AMADDev_A</code></p>
+  </li>
+  <a id="RHASSPY-attr-rhasspyTTS"></a><b>rhasspyTTS</b>
+    <p>In addition to <a href="#RHASSPY-attr-rhasspySTT">rhasspySTT</a>, this attributes adds some options to manipulate the text-to-speech processing. Any AMADDevice to be adressed for own TTS processing has to be listed here with it's link to it's siteId. If RHASSPY detects a link between a siteId and an AMADDevice type FHEM device, it will not forward any text to be spoken to Rhasspy but use other synthetisation methods instead (defaulting to <code>set &lt;AMADDevice&gt; ttsMsg $message</code>).
+      Example:<br>
+    <p><code>AMADDev_A=siteId=android_livingroom ttsCommand={fhem("set $DEVICE ttsMsg $message")}</code><br>Notes: 
+    <ul>
+        <li>This ttsCommand is just an example for an arbitrary Perl command! For AMADDevice's this should work ootb also without setting this optional key...</li>
+        <li>There's also a Reading-based logic to make a siteId linked to an AMADDevice also allowing changes at runtime with higher priority. In this case, the TTS entry is just needed to makr the device for TTS processing at all.</li>
+    </ul></p>
   </li>
   <li>
     <a id="RHASSPY-attr-forceNEXT"></a><b>forceNEXT</b>
@@ -5773,7 +5800,8 @@ yellow=rgb FFFF00</code></p>
   <li>SetScene</li> {Device} and {Scene} (it's recommended to use the $lng.fhemId.Scenes slot to get that generated automatically!).
   <li>GetTime</li>
   <li>GetDate</li>
-  <li>SetTimer</li> Timer info as described in SetTimedOnOff is mandatory, {Room} and/or {Label} are optional to distinguish between different timers.
+  <li>SetTimer</li> Timer info as described in SetTimedOnOff is mandatory, {Room} and/or {Label} are optional to distinguish between different timers. {CancelTimer} key will force RHASSPY to try to remove a running timer (using optional {Room} and/or {Label} key to identify the respective timer).
+  Required tags to set a timer: at least one of {Hour}, {Hourabs}, {Min} or {Sec}. {Label} and {Room} are optional to distinguish between different timers. If {Hourabs} is provided, all timer info will be regarded as absolute time of day info, otherwise everything is calculated using a "from now" logic.
   <li>ConfirmAction</li>
   {Mode} with value 'OK'. All other calls will be interpreted as CancelAction intent call.
   <li>CancelAction</li>{Mode} is recommended.
@@ -5793,7 +5821,8 @@ yellow=rgb FFFF00</code></p>
   RHASSPY will always respond via the satellite where the dialogue was initiated from. In some cases, you may want additional output to other satellites - e.g. if they don't have (always on) sound output options. Setting this type of reading will lead to (additional!) responses to the given second satellite; naming scheme is the same as for site2room.
   <li>sessionTimeout_&lt;siteId&gt;</li>
   RHASSPY will by default automatically close every dialogue after an executable commandset is detected. By setting this type of reading, you may keep open the dialoge to wait for the next command to be spoken on a "by siteId" base; naming scheme is similar as for site2room. Intent <i>CancelAction</i> will close any session immedately.
+  <li>siteId2ttsDevice_&lt;siteId&gt;</li>
+  If an AMADDevice TYPE device is enabled for <a href="#RHASSPY-attr-rhasspyTTS">rhasspyTTS</a>, RHASSPY will forward response texts to the device for own text-to-speach processing. Setting this type of reading allows redirection of adressed satellites to the given AMADDevice (device name as reading value); naming scheme is the same as for site2room.
 </ul>
-
 =end html
 =cut
