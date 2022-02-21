@@ -1,4 +1,4 @@
-# $Id: 10_RHASSPY.pm 25369 2021-12-29 Beta-User $
+# $Id: 10_RHASSPY.pm 25369 2022-02-21 Beta-User $
 ###########################################################################
 #
 # FHEM RHASSPY module (https://github.com/rhasspy)
@@ -32,8 +32,9 @@ package RHASSPY; ##no critic qw(Package)
 use strict;
 use warnings;
 use Carp qw(carp);
-use GPUtils qw(:all);
-use JSON qw(decode_json);
+use GPUtils qw(GP_Import);
+#use JSON qw(decode_json);
+use JSON (); # qw(decode_json encode_json);
 use Encode;
 use HttpUtils;
 use utf8;
@@ -43,6 +44,7 @@ use Time::HiRes qw(gettimeofday);
 use POSIX qw(strftime);
 #use Data::Dumper;
 use FHEM::Core::Timer::Register qw(:ALL);
+#use FHEM::Meta;
 
 sub ::RHASSPY_Initialize { goto &Initialize }
 
@@ -219,10 +221,8 @@ my $internal_mappings = {
 BEGIN {
 
   GP_Import( qw(
-    addToAttrList
-    addToDevAttrList
-    delFromDevAttrList
-    delFromAttrList
+    addToAttrList delFromDevAttrList
+    addToDevAttrList delFromAttrList
     readingsSingleUpdate
     readingsBeginUpdate
     readingsBulkUpdate
@@ -261,7 +261,7 @@ BEGIN {
     makeReadingName
     FileRead
     getAllSets
-    notifyRegexpChanged
+    notifyRegexpChanged setNotifyDev
     deviceEvents
     trim
   ) )
@@ -312,7 +312,7 @@ sub Define {
 
     my @unknown;
     for (keys %{$h}) {
-        push @unknown, $_ if $_ !~ m{\A(?:baseUrl|defaultRoom|language|devspec|fhemId|prefix|siteId|encoding|useGenericAttrs|sessionTimeout|handleHotword|experimental|Babble)\z}xm;
+        push @unknown, $_ if $_ !~ m{\A(?:baseUrl|defaultRoom|language|devspec|fhemId|prefix|siteId|encoding|useGenericAttrs|sessionTimeout|handleHotword|experimental|Babble|autoTraining)\z}xm;
     }
     my $err = join q{, }, @unknown;
     return "unknown key(s) in DEF: $err" if @unknown && $init_done;
@@ -320,7 +320,7 @@ sub Define {
 
     $hash->{defaultRoom} = $defaultRoom;
     my $language = $h->{language} // shift @{$anon} // lc AttrVal('global','language','en');
-    $hash->{MODULE_VERSION} = '0.5.11';
+    $hash->{MODULE_VERSION} = '0.5.13';
     $hash->{baseUrl} = $Rhasspy;
     initialize_Language($hash, $language) if !defined $hash->{LANGUAGE} || $hash->{LANGUAGE} ne $language;
     $hash->{LANGUAGE} = $language;
@@ -333,7 +333,7 @@ sub Define {
     $hash->{encoding} = $h->{encoding} // q{utf8};
     $hash->{useGenericAttrs} = $h->{useGenericAttrs} // 1;
 
-    for my $key (qw( experimental handleHotword sessionTimeout Babble)) {
+    for my $key (qw( experimental handleHotword sessionTimeout Babble autoTraining)) {
         delete $hash->{$key};
         $hash->{$key} = $h->{$key} if defined $h->{$key};
     }
@@ -355,7 +355,7 @@ sub firstInit {
     my $hash = shift // return;
 
     my $name = $hash->{NAME};
-    notifyRegexpChanged($hash,'',1);
+    notifyRegexpChanged($hash,'',1) if !$hash->{autoTraining};
 
     # IO
     AssignIoPort($hash);
@@ -403,8 +403,9 @@ sub initialize_Language {
     return $ret if $ret;
 
     my $decoded;
-    if ( !eval { $decoded  = decode_json(encode($cp,$content)) ; 1 } ) {
-        Log3($hash->{NAME}, 1, "JSON decoding error in languagefile $cfg:  $@");
+    #if ( !eval { $decoded  = decode_json(encode($cp,$content)) ; 1 } ) {
+    if ( !eval { $decoded  = JSON->new->decode($content) ; 1 } ) {
+        Log3($hash->{NAME}, 1, "JSON decoding error in languagefile $cfg: $@");
         return "languagefile $cfg seems not to contain valid JSON!";
     }
 
@@ -420,8 +421,8 @@ sub initialize_Language {
     for my $key (keys %{$slots}) {
         updateSingleSlot($hash, $key, $slots->{$key});
     }
-
-    return;
+    return if !$hash->{autoTraining};
+    return resetRegIntTimer( 'autoTraining', time + $hash->{autoTraining}, \&RHASSPY_autoTraining, $hash, 0);
 }
 
 sub initialize_prefix {
@@ -570,6 +571,7 @@ sub Set {
         if ($values[0] eq 'devicemap') {
             initialize_devicemap($hash);
             $hash->{'.needTraining'} = 1;
+            deleteSingleRegIntTimer('autoTraining', $hash, 1);
             return updateSlots($hash);
         }
         if ($values[0] eq 'devicemap_only') {
@@ -577,6 +579,7 @@ sub Set {
         }
         if ($values[0] eq 'slots') {
             $hash->{'.needTraining'} = 1;
+            deleteSingleRegIntTimer('autoTraining', $hash, 1);
             return updateSlots($hash);
         }
         if ($values[0] eq 'slots_no_training') {
@@ -589,6 +592,7 @@ sub Set {
         if ($values[0] eq 'all') {
             initialize_Language($hash, $hash->{LANGUAGE});
             initialize_devicemap($hash);
+            deleteSingleRegIntTimer('autoTraining', $hash, 1);
             $hash->{'.needTraining'} = 1;
             updateSlots($hash);
             return fetchIntents($hash);
@@ -928,7 +932,7 @@ sub initialize_devicemap {
 
     # when called with just one keyword, devspec2array may return the keyword, even if the device doesn't exist...
     return if !@devices;
-    
+
     for (@devices) {
         _analyze_genDevType($hash, $_) if $hash->{useGenericAttrs};
         _analyze_rhassypAttr($hash, $_);
@@ -937,6 +941,13 @@ sub initialize_devicemap {
     return;
 }
 
+sub RHASSPY_autoTraining {
+    my $fnHash = shift // return;
+    my $hash = $fnHash->{HASH} // $fnHash;
+    return if !defined $hash;
+
+    return updateSlots($hash, 1);
+}
 
 sub _analyze_rhassypAttr {
     my $hash   = shift // return;
@@ -1519,14 +1530,19 @@ sub disable_msgDialog {
             $devsp = qq($hash->{helper}->{STT}->{config}->{AMADCommBridge});
     }
     if ($enable) { 
-        $devsp ? $devsp .= 'TYPE=(ROOMMATE|GUEST)' : 'TYPE=(ROOMMATE|GUEST)';
+        $devsp ? $devsp .= ',TYPE=(ROOMMATE|GUEST)' : 'TYPE=(ROOMMATE|GUEST)';
     }
-    my @ntfdevs = devspec2array($devsp);
-    my $monitored = join q{|}, @ntfdevs;
+    if ($hash->{autoTraining}) {
+        $devsp ? $devsp .= ',global' : 'global';
+    }
 
-    $monitored 
-        ? notifyRegexpChanged($hash,$monitored,0)
-        : notifyRegexpChanged($hash,'',1);
+    my @ntfdevs = devspec2array($devsp);
+    if (@ntfdevs) {
+        setNotifyDev($hash,$devsp);
+        delete $hash->{disableNotifyFn};
+    } else {
+        notifyRegexpChanged($hash,'',1);
+    }
 
     delete $hash->{helper}{msgDialog} if !$enable;
     return;
@@ -1564,7 +1580,7 @@ sub RHASSPY_DialogTimeout {
     my $data     = shift // $hash->{helper}{'.delayed'}->{$identiy};
     my $siteId = $data->{siteId};
 
-    deleteSingleRegIntTimer($identiy, $hash, 1); 
+    deleteSingleRegIntTimer($identiy, $hash, 1);
 
     respond( $hash, $data, getResponse( $hash, 'DefaultConfirmationTimeout' ) );
     delete $hash->{helper}{'.delayed'}{$identiy};
@@ -2393,7 +2409,8 @@ sub parseJSONPayload {
 
     # JSON Decode und Fehlerüberprüfung
     my $decoded;
-    if ( !eval { $decoded  = decode_json(encode($cp,$json)) ; 1 } ) {
+    #if ( !eval { $decoded  = decode_json(encode($cp,$json)) ; 1 } ) {
+    if ( !eval { $decoded  = JSON->new->decode($json) ; 1 } ) {
         return Log3($hash->{NAME}, 1, "JSON decoding error: $@");
     }
 
@@ -2475,6 +2492,72 @@ sub Notify {
     Log3($name, 5, "[$name] NotifyFn called with event in $device");
 
     return notifySTT($hash, $dev_hash) if InternalVal($device,'TYPE', 'unknown') eq 'AMADCommBridge';
+
+    if ( $name eq 'global' ) {
+        return if !$hash->{autoTraining};
+
+        my $events = $dev_hash->{CHANGED};
+        return if !$events;
+        my @devs = devspec2array("$hash->{devspec}");
+        for my $evnt(@{$events}){
+            next if $evnt !~ m{\A(?:ATTR|DELETEATTR|DELETED|RENAMED)\s+(\w+)(?:\s+)(.*)};
+            my $dev = $1;
+            my $rest = $2;
+            next if !grep { $_ eq $dev } @devs;
+
+            return resetRegIntTimer( 'autoTraining', time + $hash->{autoTraining}, \&RHASSPY_autoTraining, $hash, 0) if $evnt =~ m{\A(?:DELETED|RENAMED)\s+\w+};
+            return resetRegIntTimer( 'autoTraining', time + $hash->{autoTraining}, \&RHASSPY_autoTraining, $hash, 0) if $rest =~ m{\A(alias|$hash->{prefix}|genericDeviceType|(alexa|siri|gassistant)Name|group)}xms;
+        }
+        return;
+    }
+
+
+=pod
+        if ($values[0] eq 'all') {
+            initialize_Language($hash, $hash->{LANGUAGE});
+            initialize_devicemap($hash);
+            $hash->{'.needTraining'} = 1;
+            updateSlots($hash);
+            return fetchIntents($hash);
+            
+                if ( $attribute eq 'rhasspyShortcuts' ) {
+        for ( keys %{ $hash->{helper}{shortcuts} } ) {
+            delete $hash->{helper}{shortcuts}{$_};
+        }
+        if ($command eq 'set') {
+            return init_shortcuts($hash, $value); 
+        }
+    }
+
+    if ( $attribute eq 'rhasspyIntents' ) {
+        for ( keys %{ $hash->{helper}{custom} } ) {
+            delete $hash->{helper}{custom}{$_};
+        }
+        if ($command eq 'set') {
+            return init_custom_intents($hash, $value); 
+        }
+    }
+
+    if ( $attribute eq 'rhasspyTweaks' ) {
+        for ( keys %{ $hash->{helper}{tweaks} } ) {
+            delete $hash->{helper}{tweaks}{$_};
+        }
+        if ($command eq 'set') {
+            return initialize_rhasspyTweaks($hash, $value) if $init_done;
+        } 
+    }
+
+
+    if ( $attribute eq 'languageFile' ) {
+        if ($command ne 'set') {
+            delete $hash->{CONFIGFILE};
+            delete $attr{$name}{languageFile};
+            delete $hash->{helper}{lng};
+            $value = undef;
+        }
+        return initialize_Language($hash, $hash->{LANGUAGE}, $value);
+    }
+=cut
 
     return if !ReadingsVal($name,'enableMsgDialog',1) || !defined $hash->{helper}->{msgDialog};
     my @events = @{deviceEvents($dev_hash, 1)};
@@ -3168,10 +3251,13 @@ sub msgDialog {
 
 # Send all devices, rooms, etc. to Rhasspy HTTP-API to update the slots
 sub updateSlots {
-    my $hash = shift // return;
+    my $hash      = shift // return;
+    my $checkdiff = shift;
+
     my $language = $hash->{LANGUAGE};
     my $fhemId   = $hash->{fhemId};
     my $method   = q{POST};
+    my $changed;
 
     initialize_devicemap($hash);
     my $tweaks = $hash->{helper}{tweaks}->{updateSlots};
@@ -3212,10 +3298,15 @@ sub updateSlots {
         $deviceData = $deviceData . '"}';
         Log3($hash->{NAME}, 5, "Updating Rhasspy Sentences with data: $deviceData");
         _sendToApi($hash, $url, $method, $deviceData);
+        $changed = 1 if ReadingsVal($hash->{NAME},'.Shortcuts.ini','') ne $deviceData;
+        readingsSingleUpdate($hash,'.Shortcuts.ini',$deviceData,0);
     }
 
     # If there are any devices, rooms, etc. found, create JSON structure and send it the the API
-    return if !@devices && !@rooms && !@channels && !@types && !@groups;
+    if ( !@devices && !@rooms && !@channels && !@types && !@groups ) {
+        $hash->{'.needTraining'} = 1 if $checkdiff && $changed && $hash->{autoTraining};
+        return;
+    }
 
     my $json;
     $deviceData = {};
@@ -3286,6 +3377,9 @@ sub updateSlots {
 
     Log3($hash->{NAME}, 5, "Updating Rhasspy Slots with data ($language): $json");
 
+    $changed = 1 if ReadingsVal($hash->{NAME},'.slots','') ne $json;
+    readingsSingleUpdate($hash,'.slots',$json,0);
+    $hash->{'.needTraining'} = 1 if $checkdiff && $changed && $hash->{autoTraining};
     _sendToApi($hash, $url, $method, $json);
     return;
 }
@@ -3415,7 +3509,7 @@ sub RHASSPY_ParseHttpResponse {
 
     if ( defined $urls->{$url} ) {
         readingsBulkUpdate($hash, $urls->{$url}, $data);
-        if ( $urls->{$url} eq 'updateSlots' && $hash->{'.needTraining'} ) {
+        if ( ( $urls->{$url} eq 'updateSlots' || $urls->{$url} eq 'updateSentences' ) && $hash->{'.needTraining'} ) {
             trainRhasspy($hash);
             delete $hash->{'.needTraining'};
         }
@@ -3425,7 +3519,8 @@ sub RHASSPY_ParseHttpResponse {
     }
     elsif ( $url =~ m{api/profile}ix ) {
         my $ref; 
-        if ( !eval { $ref = decode_json($data) ; 1 } ) {
+        #if ( !eval { $ref = decode_json($data) ; 1 } ) {
+        if ( !eval { $ref = JSON->new->decode($data) ; 1 } ) {
             readingsEndUpdate($hash, 1);
             return Log3($hash->{NAME}, 1, "JSON decoding error: $@");
         }
@@ -3433,9 +3528,9 @@ sub RHASSPY_ParseHttpResponse {
         for (keys %{$ref}) {
             next if !defined $ref->{$_}{satellite_site_ids};
             if ($siteIds) {
-                $siteIds .= ',' . encode($cp,$ref->{$_}{satellite_site_ids});
+                $siteIds .= ',' . $ref->{$_}{satellite_site_ids}; #encode($cp,$ref->{$_}{satellite_site_ids});
             } else {
-                $siteIds = encode($cp,$ref->{$_}{satellite_site_ids});
+                $siteIds = $ref->{$_}{satellite_site_ids}; #encode($cp,$ref->{$_}{satellite_site_ids});
             }
         }
         if ( $siteIds ) {
@@ -3445,11 +3540,12 @@ sub RHASSPY_ParseHttpResponse {
     }
     elsif ( $url =~ m{api/intents}ix ) {
         my $refb; 
-        if ( !eval { $refb = decode_json($data) ; 1 } ) {
+        #if ( !eval { $refb = decode_json($data) ; 1 } ) {
+        if ( !eval { $refb = JSON->new->decode($data) ; 1 } ) {
             readingsEndUpdate($hash, 1);
             return Log3($hash->{NAME}, 1, "JSON decoding error: $@");
         }
-        my $intents = encode($cp,join q{,}, keys %{$refb});
+        my $intents = join q{,}, keys %{$refb}; #encode($cp,join q{,}, keys %{$refb});
         readingsBulkUpdate($hash, 'intents', $intents);
         configure_DialogManager($hash);
     }
@@ -5258,11 +5354,12 @@ So all parameters in define should be provided in the <i>key=value</i> form. In 
   <a id="RHASSPY-genericDeviceType"></a>
   <li><b>useGenericAttrs</b>: Formerly, RHASSPY only used it's own attributes (see list below) to identifiy options for the subordinated devices you want to control. Today, it is capable to deal with a couple of commonly used <code>genericDeviceType</code> (<i>switch</i>, <i>light</i>, <i>thermostat</i>, <i>thermometer</i>, <i>blind</i> and <i>media</i>), so it will add <code>genericDeviceType</code> to the global attribute list and activate RHASSPY's feature to estimate appropriate settings - similar to rhasspyMapping. <code>useGenericAttrs=0</code> will deactivate this. (do not set this unless you know what you are doing!). Note: <code>homebridgeMapping</code> atm. is not used as source for appropriate mappings in RHASSPY.</li>
   <li><b>handleHotword</b>: Trigger Reading <i>hotword</i> in case of a hotword is detected. See attribute <a href="#RHASSPY-attr-rhasspyHotwords">rhasspyHotwords</a> for further reference.</li>
-  <li><b>Babble</b>: Points to a <a href="#Babble ">Babble</a> device. Atm. only used in case if text input from an <a href="#AMADCommBridge">AMADCommBridge</a> is processed, see <a href="#RHASSPY-attr-rhasspySTT">rhasspySTT</a> for details.</li>
-
-  <li><b>encoding</b>: May be helpfull in case you experience problems in conversion between RHASSPY (module) and Rhasspy (service). Example: <code>encoding=cp-1252</code>. Do not set this unless you experience encoding problems!</li>
+  <li><b>Babble</b>: <a href="#RHASSPY-experimental"><b>experimental!</b></a> Points to a <a href="#Babble ">Babble</a> device. Atm. only used in case if text input from an <a href="#AMADCommBridge">AMADCommBridge</a> is processed, see <a href="#RHASSPY-attr-rhasspySTT">rhasspySTT</a> for details.</li>
+  <li><b>encoding</b>: <b>most likely deprecated!</b> May be helpfull in case you experience problems in conversion between RHASSPY (module) and Rhasspy (service). Example: <code>encoding=cp-1252</code>. Do not set this unless you experience encoding problems!</li>
+  <li><b>sessionTimeout</b> <a href="#RHASSPY-experimental"><b>experimental!</b></a> timout limit in seconds. By default, RHASSPY will close a sessions immediately once a command could be executed. Setting a timeout will keep session open until timeout expires. NOTE: Setting this key may result in confusing behaviour. Atm not recommended for regular useage, <b>testing only!</b> May require some non-default settings on the Rhasspy side to prevent endless self triggering.</li>
+  <li><b>autoTraining</b>: <a href="#RHASSPY-experimental"><b>experimental!</b></a> 
+ activated by setting a timeout (in seconds). RHASSPY then will try to catch all actions wrt. to changes in attributes that may contain any content relevant for Rhasspy's training. If something ist changed at runtime, training will be initiated if timeout hast passed since last action; see also <a href="#RHASSPY-set-update">update devicemap</a> command.</li>
 </ul>
-
 <p>RHASSPY needs a <a href="#MQTT2_CLIENT">MQTT2_CLIENT</a> device connected to the same MQTT-Server as the voice assistant (Rhasspy) service.</p>
 <p><b>Examples for defining an MQTT2_CLIENT device and the Rhasspy device in FHEM:</b>
 <ul>
@@ -5310,7 +5407,7 @@ After changing something relevant within FHEM for either the data structure in</
     <p>Various options to update settings and data structures used by RHASSPY and/or Rhasspy. Choose between one of the following:</p>
     <ul>
       <li><b>devicemap</b><br>
-      When having finished the configuration work to RHASSPY and the subordinated devices, issuing a devicemap-update is mandatory, to get the RHASSPY data structure updated, inform Rhasspy on changes that may have occured (update slots) and initiate a training on updated slot values etc., see <a href="#RHASSPY-list">remarks on data structure above</a>.
+      When having finished the configuration work to RHASSPY and the subordinated devices, issuing a devicemap-update is mandatory (unless the "autoTraining" feature is enabled), to get the RHASSPY data structure updated, inform Rhasspy on changes that may have occured (update slots) and initiate a training on updated slot values etc., see <a href="#RHASSPY-list">remarks on data structure above</a>.
       </li>
       <li><b>devicemap_only</b><br>
       This may be helpfull to make an intermediate check, whether attribute changes have found their way to the data structure. This will neither update slots nor initiate any training towards Rhasspy.
@@ -5590,8 +5687,13 @@ i="i am hungry" f="set Stove on" d="Stove" c="would you like roast pork"</code><
         <br>
       </ul>
   </li>
+  <p><b>Remarks on rhasspySTT, rhasspyTTS and Babble:</b><br><a id="RHASSPY-experimental"></a>
+    Interaction with Babble and AMAD.*-Devices is not approved to be propperly working yet. Further tests
+    may be needed and functionality may be subject to changes!
+  </p>
   <li>
     <a id="RHASSPY-attr-rhasspySTT"></a><b>rhasspySTT</b>
+    <a href="#RHASSPY-experimental"><b>experimental!</b></a> 
     <p>Optionally, you may want not to use the internal Rhasspy speach-to-text engine provided by Rhasspy (for one or several siteId's), but provide  simple text to be forwarded to Rhasspy for intent recognition. Atm. only "AMAD" is supported for this feature, and most likely you also want to set values to <a href="#RHASSPY-attr-rhasspyTTS">rhasspyTTS</a> as well. For generic "msg" (and text messenger) support see <a href="#RHASSPY-attr-rhasspyMsgDialog">rhasspyMsgDialog</a> <br>Note: You will have to (de-) activate these parts of the Rhasspy ecosystem for the respective satellites manually!</p>
     Keys that may be set in this attribute:
      <ul>
@@ -5605,7 +5707,9 @@ i="i am hungry" f="set Stove on" d="Stove" c="would you like roast pork"</code><
                  AMADCommBridge=AMADBridge<br>
                  allowed=AMADDev_A</code></p>
   </li>
+  <li>
   <a id="RHASSPY-attr-rhasspyTTS"></a><b>rhasspyTTS</b>
+    <a href="#RHASSPY-experimental"><b>experimental!</b></a> 
     <p>In addition to <a href="#RHASSPY-attr-rhasspySTT">rhasspySTT</a>, this attributes adds some options to manipulate the text-to-speech processing. Any AMADDevice to be adressed for own TTS processing has to be listed here with it's link to it's siteId. If RHASSPY detects a link between a siteId and an AMADDevice type FHEM device, it will not forward any text to be spoken to Rhasspy but use other synthetisation methods instead (defaulting to <code>set &lt;AMADDevice&gt; ttsMsg $message</code>).
       Example:<br>
     <p><code>AMADDev_A=siteId=android_livingroom ttsCommand={fhem("set $DEVICE ttsMsg $message")}</code><br>Notes: 
