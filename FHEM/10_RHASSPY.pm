@@ -1,4 +1,4 @@
-# $Id: 10_RHASSPY.pm 25757 2022-02-28 19:08:25Z Beta-User $
+# $Id: 10_RHASSPY.pm 25757 2022-03-01 Beta-User $
 ###########################################################################
 #
 # FHEM RHASSPY module (https://github.com/rhasspy)
@@ -320,7 +320,7 @@ sub Define {
 
     $hash->{defaultRoom} = $defaultRoom;
     my $language = $h->{language} // shift @{$anon} // lc AttrVal('global','language','en');
-    $hash->{MODULE_VERSION} = '0.5.16';
+    $hash->{MODULE_VERSION} = '0.5.17';
     $hash->{baseUrl} = $Rhasspy;
     initialize_Language($hash, $language) if !defined $hash->{LANGUAGE} || $hash->{LANGUAGE} ne $language;
     $hash->{LANGUAGE} = $language;
@@ -473,39 +473,10 @@ sub Undefine {
 
 sub Delete {
     my $hash = shift // return;
-    #my $prefix = $hash->{prefix} // return;
 
     deleteAllRegIntTimer($hash);
     RemoveInternalTimer($hash);
 
-# DELETE POD AFTER TESTS ARE COMPLETED
-#Beta-User: Most likely removing attributes isn't a good idea; additionally: if, then attributes should be removed from global
-=begin comment
-    
-    #Beta-User: globale Attribute löschen
-    for (devspec2array("${prefix}Mapping=.+")) {
-        delFromDevAttrList($_,"${prefix}Mapping:textField-long");
-    }
-    for (devspec2array("${prefix}Name=.+")) {
-        delFromDevAttrList($_,"${prefix}Name");
-    }
-    for (devspec2array("${prefix}Room=.+")) {
-        delFromDevAttrList($_,"${prefix}Room");
-    }
-    for (devspec2array("${prefix}Channels=.+")) {
-        delFromDevAttrList($_,"${prefix}Channels");
-    }
-    for (devspec2array("${prefix}Colors=.+")) {
-        delFromDevAttrList($_,"${prefix}Colors");
-    }
-    for (devspec2array("${prefix}Specials=.+")) {
-        delFromDevAttrList($_,"${prefix}Specials");
-    }
-    for (devspec2array("${prefix}Group=.+")) {
-        delFromDevAttrList($_,"${prefix}Group");
-    }
-=end comment
-=cut
     return;
 }
 
@@ -846,8 +817,6 @@ hermes/dialogueManager/configure (JSON)
     https://rhasspy-hermes-app.readthedocs.io/en/latest/usage.html#continuing-a-session
 =cut
 
-    my $sId = $siteId eq 'null' ? 'null' : qq("$siteId"); 
-
     my @disabled;
     my $matches = join q{|}, @{$toDisable};
     for (@intents) {
@@ -905,7 +874,6 @@ sub init_custom_intents {
         my $err = perlSyntaxCheck( $perlcommand );
         return "$err in $line" if $err && $init_done;
 
-        #$hash->{helper}{custom}{$+{intent}}{perl} = $perlcommand; #Beta-User: delete after testing!
         $hash->{helper}{custom}{$intent}{function} = $function;
 
         my $args = trim($+{arg});
@@ -916,7 +884,7 @@ sub init_custom_intents {
            push @params, $ar;
         }
 
-        $hash->{helper}{custom}{$+{intent}}{args} = \@params;
+        $hash->{helper}{custom}{$intent}{args} = \@params;
     }
     return;
 }
@@ -1519,9 +1487,9 @@ sub initialize_msgDialog {
 sub disable_msgDialog {
     my $hash    = shift // return;
     my $enable  = shift // 0;
-    my $fromSST = shift;
-    readingsSingleUpdate($hash,'enableMsgDialog',$enable,1) if !$fromSST;
-    return initialize_msgDialog($hash) if $enable && !$fromSST;
+    my $fromSTT = shift;
+    readingsSingleUpdate($hash,'enableMsgDialog',$enable,1) if !$fromSTT;
+    return initialize_msgDialog($hash) if $enable && !$fromSTT;
 
     my $devsp;
     if ( defined $hash->{helper}->{STT} 
@@ -2777,6 +2745,7 @@ sub ttsDialog_close {
     Log3($hash, 5, "ttsDialog_close called with $device");
 
     deleteSingleRegIntTimer($device, $hash);
+    readingsSingleUpdate($defs{$device}, 'rhasspy_dialogue', 'closed', 1);
 
     delete $hash->{helper}{ttsDialog}->{$device};
     return;
@@ -2797,7 +2766,8 @@ sub ttsDialog_open {
         customData   => $device
     };
 
-    setTtsDialogTimeout($hash, $sendData, $hash->{helper}->{TTS}->{config}->{$device}->{sessionTimeout});
+    my $tout = $hash->{helper}->{TTS}->{config}->{$device}->{sessionTimeout} // $hash->{sessionTimeout};
+    setTtsDialogTimeout($hash, $sendData, $tout);
     return ttsDialog_progress($hash, $device, $msgtext, $sendData);
 }
 
@@ -2832,20 +2802,31 @@ sub ttsDialog_progress {
 
 sub ttsDialog_respond {
     my $hash       = shift // return;
-    my $DEVICE     = shift // return;
+    my $device     = shift // return;
     my $message    = shift // return;
     my $keepopen   = shift // 1;
 
-    Log3($hash, 5, "ttsDialog_respond called with $DEVICE and text $message");
+    Log3($hash, 5, "ttsDialog_respond called with $device and text $message");
     trim($message);
     return if !$message; # empty?
 
-    my $msgCommand = $hash->{helper}->{TTS}->{config}->{$DEVICE}->{ttsCommand} // return;
-    $msgCommand =~ s{\\[\@]}{@}x;
-    $msgCommand =~ s{(\$\w+)}{$1}eegx;
-    AnalyzeCommand($hash, $msgCommand);
-    resetRegIntTimer( $DEVICE, time + $hash->{helper}->{TTS}->{config}->{$DEVICE}->{sessionTimeout}, \&RHASSPY_msgDialogTimeout, $hash, 0) if $keepopen;
-    return $DEVICE;
+    my $msgCommand = $hash->{helper}->{TTS}->{config}->{$device}->{ttsCommand} // return;
+    my %specials = (
+         '$DEVICE'  => $device,
+         '$message' => $message,
+         '$NAME'  => $hash->{NAME}
+        );
+    $msgCommand  = EvalSpecials($msgCommand, %specials);
+    AnalyzeCommandChain($hash, $msgCommand);
+    if ( $keepopen ) {
+        my $tout = $hash->{helper}->{TTS}->{config}->{$device}->{sessionTimeout} // $hash->{sessionTimeout};
+        resetRegIntTimer( $device, time + $tout, \&RHASSPY_ttsDialogTimeout, $hash, 0);
+        readingsSingleUpdate($defs{$device}, 'rhasspy_dialogue', 'open', 1);
+    } else {
+        deleteSingleRegIntTimer($device, $hash);
+        readingsSingleUpdate($defs{$device}, 'rhasspy_dialogue', 'closed', 1);
+    }
+    return $device;
 }
 
 # Update the readings lastIntentPayload and lastIntentTopic
@@ -3083,12 +3064,15 @@ sub respond {
     readingsEndUpdate($hash,1);
     Log3($hash->{NAME}, 5, "Response is: $response");
 
-    #check for msgDialog session
+    #check for msgDialog or ttsDialog sessions
     my $identity = (split m{_$hash->{siteId}_}, $data->{sessionId},3)[0];
     if ( defined $hash->{helper}->{msgDialog} 
       && defined $hash->{helper}->{msgDialog}->{$identity} ){
         Log3($hash, 5, "respond deviated to msgDialog_respond for $identity.");
         return msgDialog_respond($hash, $identity, $response);
+    } elsif (defined $hash->{helper}->{TTS} 
+        && defined $hash->{helper}->{TTS}->{config}->{$identity} ) {
+        return ttsDialog_respond($hash,$identity,$response,$topic eq 'continueSession');
     }
 
     IOWrite($hash, 'publish', qq{hermes/dialogueManager/$topic $json});
@@ -5614,7 +5598,7 @@ i="i am hungry" f="set Stove on" d="Stove" c="would you like roast pork"</code><
   <li>
     <a id="RHASSPY-attr-rhasspyHotwords"></a><b>rhasspyHotwords</b>
     <p>Define custom reactions as soon as a specific hotword is detected (or with "global": a toggle command is detected). This does not require any specific configuration on any other FHEM device.<br>
-    One hotword per line, syntax is either a simple and an extended version. The "hotword" <i>global</i> will be treated specially and can be used to also execute custom commands when a <toggle> event is indicated.</p>
+    One hotword per line, syntax is either a simple and an extended version. The "hotword" <i>global</i> will be treated specially and can be used to also execute custom commands when a <i>toggle</i> event is indicated.</p>
     Examples:<br>
     <p><code>bumblebee_linux = set amplifier2 mute on<br>
         porcupine_linux = livingroom="set amplifier mute on" default={Log3($DEVICE,3,"device $DEVICE - room $ROOM - value $VALUE")}<br>
