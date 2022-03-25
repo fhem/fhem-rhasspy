@@ -660,8 +660,8 @@ sub Get {
                 my $start = gettimeofday();
                 my $tHash = { hash=>$hash, CL=>$hash->{CL}, reading=> 'testResult', start=>$start};
                 $hash->{asyncGet} = $tHash;
-                InternalTimer(gettimeofday()+4, sub {
-                  asyncOutput($tHash->{CL}, "Timeout for test sentence - most likely this is no problem, check testResult reading later, but your system seems to be rather slow...");
+                InternalTimer(gettimeofday()+4, sub { delete $hash->{testline};
+                  asyncOutput($tHash->{CL}, "Timeout for test sentence - most likely this is no problem, check testResult reading later, but either intent was not recognized, RHASSPY's siteId is not configured for NLU or your system seems to be rather slow...");
                   delete($hash->{asyncGet});
                 }, $tHash, 0);
             }
@@ -2860,6 +2860,7 @@ sub testmode_parse {
     $hash->{helper}->{test}->{passed}++;
     if ( $intent eq 'intentNotRecognized' ) {
         $result = $line;
+        $result .= " Intent not recognized." if $hash->{helper}->{test}->{filename} eq 'none';
         $hash->{helper}->{test}->{notRecogn}++;
         $hash->{helper}->{test}->{notRecognInDialogue}++ if defined $hash->{helper}->{test}->{isInDialogue};
     } else { 
@@ -5819,7 +5820,6 @@ After changing something relevant within FHEM for either the data structure in</
 
 <a id="RHASSPY-get"></a>
 <h4>Get</h4>
-<p>Note: To get test results, RHASSPY's siteId has to be configured for intent recognition in Rhasspy as well.</p>
 <ul>
   <li>
     <a id="RHASSPY-get-export_mapping"></a><b>export_mapping &lt;devicename&gt;</b>
@@ -5828,10 +5828,12 @@ After changing something relevant within FHEM for either the data structure in</
   <li>
     <a id="RHASSPY-get-test_file"></a><b>test_file &lt;path and filename&gt;</b>
     <p>Checks the provided text file. Content will be sent to Rhasspy NLU for recognition (line by line), result will be written to the file '&lt;input without ending.txt&gt;_result.txt'. <i><b>stop</i></b> as filename will stop test mode if sth. goes wrong. No commands will be executed towards FHEM devices while test mode is active.</p>
+    <p>Note: To get test results, RHASSPY's siteId has to be configured for intent recognition in Rhasspy as well.</p>
   </li>
   <li>
     <a id="RHASSPY-get-test_sentence"></a><b>test_sentence &lt;sentence to be analyzed&gt;</b>
     <p>Checks the provided sentence for recognition by Rhasspy NLU. No commands to be executed as well.</p>
+    <p>Note: wrt. to RHASSPY's siteId for NLU see remark get test_file.</p>
   </li>
 </ul>
 
