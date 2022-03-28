@@ -1,4 +1,4 @@
-# $Id: 10_RHASSPY.pm 25880 2022-03-24 17:25:34Z Beta-User $
+# $Id: 10_RHASSPY.pm 25886 2022-03-27 09:29:00Z Beta-User $
 ###########################################################################
 #
 # FHEM RHASSPY module (https://github.com/rhasspy)
@@ -1239,7 +1239,7 @@ sub _analyze_genDevType {
     }
 
     if ( $gdt eq 'thermostat' ) {
-        my $desTemp = $allset =~ m{\b(desiredTemp)([\b:\s]|\Z)}xms ? $1 : 'desired-temp';
+        my $desTemp = $allset =~ m{\b(desiredTemp|desired)([\b:\s]|\Z)}xms ? $1 : 'desired-temp';
         my $measTemp = InternalVal($device, 'TYPE', 'unknown') eq 'CUL_HM' ? 'measured-temp' : 'temperature';
         $currentMapping = 
             { GetNumeric => { 'desired-temp' => {currentVal => $desTemp, type => 'desired-temp'},
@@ -2037,13 +2037,13 @@ sub getDeviceByIntentAndType {
     my $room   = shift;
     my $intent = shift;
     my $type   = shift; #Beta-User: any necessary parameters...?
-    #my $inBulk = shift // 0;
+    my $subType = shift // $type;
 
     #rem. Beta-User: atm function is only called by GetNumeric!
     my $device;
 
     # Devices sammeln
-    my ($matchesInRoom, $matchesOutsideRoom) = getDevicesByIntentAndType($hash, $room, $intent, $type);
+    my ($matchesInRoom, $matchesOutsideRoom) = getDevicesByIntentAndType($hash, $room, $intent, $type, $subType);
     Log3($hash->{NAME}, 5, "matches in room: @{$matchesInRoom}, matches outside: @{$matchesOutsideRoom}");
     my ($response, $last_item, $first_items);
 
@@ -2057,7 +2057,7 @@ sub getDeviceByIntentAndType {
             for my $dev (@{$matchesInRoom}) {
                 push @aliases, $hash->{helper}{devicemap}{devices}{$dev}->{alias};
                 if (defined $hash->{helper}{devicemap}{devices}{$dev}->{prio} && defined $hash->{helper}{devicemap}{devices}{$dev}{prio}->{inRoom}) {
-                    push @priority, $dev if $hash->{helper}{devicemap}{devices}{$dev}{prio}->{inRoom} =~ m{\b$type\b}xms;
+                    push @priority, $dev if $hash->{helper}{devicemap}{devices}{$dev}{prio}->{inRoom} =~ m{\b$subType\b}xms;
                 }
             }
             if (@priority) { 
@@ -2135,9 +2135,10 @@ sub getActiveDeviceForIntentAndType {
     my $room   = shift;
     my $intent = shift;
     my $type   = shift; #Beta-User: any necessary parameters...?
+    my $subType = shift // $type;
 
     my $device;
-    my ($matchesInRoom, $matchesOutsideRoom) = getDevicesByIntentAndType($hash, $room, $intent, $type);
+    my ($matchesInRoom, $matchesOutsideRoom) = getDevicesByIntentAndType($hash, $room, $intent, $type, $subType);
 
     # Anonyme Funktion zum finden des aktiven Geräts
     my $activeDevice = sub ($$) {
@@ -2817,10 +2818,17 @@ sub testmode_next {
         };
 
         my $json = _toCleanJSON($sendData);
+        resetRegIntTimer( 'testmode_end', time + 10, \&RHASSPY_testmode_timeout, $hash ) if $hash->{helper}->{test}->{filename} ne 'none';
         return IOWrite($hash, 'publish', qq{hermes/nlu/query $json});
     }
+    return testmode_end($hash);
+}
 
-    my $filename = $hash->{helper}->{test}->{filename};
+sub testmode_end {
+    my $hash = shift // return;
+    my $fail = shift // 0;
+
+    my $filename = $hash->{helper}->{test}->{filename} // q{none};
     $filename =~ s{[.]txt\z}{}i;
     $filename = "${filename}_result.txt";
 
@@ -2832,8 +2840,11 @@ sub testmode_next {
     if ( $filename ne 'none_result.txt' ) {
         my $duration = '';
         $duration = sprintf( " Testing time: %.2f seconds.", (gettimeofday() - $hash->{asyncGet}{start})*1) if $hash->{asyncGet} && $hash->{asyncGet}{reading} eq 'testResult';
-        FileWrite({ FileName => $filename, ForceType => 'file' }, @{$hash->{helper}->{test}->{result}} );
-        $result .= "$duration See $filename for detailed results."
+        my $result = $hash->{helper}->{test}->{result};
+        push @{$result}, "test ended with timeout! Last request was $hash->{helper}->{test}->{content}->[$hash->{testline}]" if $fail;
+        FileWrite({ FileName => $filename, ForceType => 'file' }, @{$result} );
+        $result .= "$duration See $filename for detailed results." if !$fail;
+        $result = "Test ended incomplete with timeout. See $filename for results up to failure." if $fail;
     } else {
         $result = $fails ? 'Test failed, ' : 'Test ok, ';
         $result .= "result is: $hash->{helper}->{test}->{result}->[0]"
@@ -2842,11 +2853,14 @@ sub testmode_next {
     if( $hash->{asyncGet} && $hash->{asyncGet}{reading} eq 'testResult' ) {
           my $duration = sprintf( "%.2f", (gettimeofday() - $hash->{asyncGet}{start})*1);
           RemoveInternalTimer($hash->{asyncGet});
-          asyncOutput($hash->{asyncGet}{CL}, "test(s) passed successfully. Summary: $result, duration: $duration s");
+          my $suc = $fail ? 'not completely passed!' : 'passed successfully.';
+          asyncOutput($hash->{asyncGet}{CL}, "test(s) $suc Summary: $result duration: $duration s");
           delete($hash->{asyncGet});
     }
     delete $hash->{testline};
     delete $hash->{helper}->{test};
+    deleteSingleRegIntTimer('testmode_end', $hash); 
+
     return;
 }
 
@@ -2860,7 +2874,7 @@ sub testmode_parse {
     $hash->{helper}->{test}->{passed}++;
     if ( $intent eq 'intentNotRecognized' ) {
         $result = $line;
-        $result .= " Intent not recognized." if $hash->{helper}->{test}->{filename} eq 'none';
+        $result .= " => Intent not recognized." if $hash->{helper}->{test}->{filename} eq 'none';
         $hash->{helper}->{test}->{notRecogn}++;
         $hash->{helper}->{test}->{notRecognInDialogue}++ if defined $hash->{helper}->{test}->{isInDialogue};
     } else { 
@@ -2883,6 +2897,17 @@ sub testmode_parse {
     $hash->{testline}++;
     return testmode_next($hash);
 }
+
+sub RHASSPY_testmode_timeout {
+    my $fnHash = shift // return;
+    my $hash = $fnHash->{HASH} // $fnHash;
+    return if !defined $hash;
+    my $identiy = $fnHash->{MODIFIER};
+    deleteSingleRegIntTimer($identiy, $hash, 1); 
+
+    return testmode_end($hash, 1);
+}
+
 
 sub _isUnexpectedInTestMode {
     my $hash   = shift // return;
@@ -4358,9 +4383,12 @@ sub handleIntentSetNumeric {
     my $unit   = $data->{Unit};
     my $change = $data->{Change};
     my $type   = $data->{Type};
+    my $subType= $data->{Type};
+    
     if ( !defined $type && defined $change ){
         $type   = $internal_mappings->{Change}->{$change}->{Type};
         $data->{Type} = $type if defined $type;
+        $subType = 'desired-temp' if $data->{Type} eq 'temperature';
     }
     my $value  = $data->{Value};
     my $room   = getRoomName($hash, $data);
@@ -4374,7 +4402,7 @@ sub handleIntentSetNumeric {
             getActiveDeviceForIntentAndType($hash, $room, 'SetNumeric', $type) 
             // return respond( $hash, $data, getResponse( $hash, 'NoActiveMediaDevice') );
     } else {
-        $device = getDeviceByIntentAndType($hash, $room, 'SetNumeric', $type);
+        $device = getDeviceByIntentAndType($hash, $room, 'SetNumeric', $type, $subType);
     }
 
     return respond( $hash, $data, getResponse( $hash, 'NoDeviceFound' ) ) if !defined $device;
@@ -4496,9 +4524,9 @@ sub handleIntentSetNumeric {
     if ( defined $specials ) {
         my $vencmd = $specials->{setter} // $cmd;
         my $vendev = $specials->{device} // $device;
-        if ( $change ne 'cmdStop' ) {
+        if ( defined $change && $change ne 'cmdStop' ) {
             analyzeAndRunCmd($hash, $vendev, defined $specials->{CustomCommand} ? $specials->{CustomCommand} :$vencmd , $newVal) if $device ne $vendev || $cmd ne $vencmd;
-        } elsif ( defined $specials->{stopCommand} ) {
+        } elsif ( defined $change && $change eq 'cmdStop' && defined $specials->{stopCommand} ) {
             analyzeAndRunCmd($hash, $vendev, $specials->{stopCommand});
         }
     }
