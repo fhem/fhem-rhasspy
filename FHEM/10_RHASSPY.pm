@@ -1,4 +1,4 @@
-# $Id: 10_RHASSPY.pm 25892 2022-03-29 Beta-User $
+# $Id: 10_RHASSPY.pm 25894 2022-03-29 a Beta-User $
 ###########################################################################
 #
 # FHEM RHASSPY module (https://github.com/rhasspy)
@@ -4655,6 +4655,7 @@ sub handleIntentGetState {
     my $room = getRoomName($hash, $data);
 
     my $type = $data->{Type} // $data->{type};
+    my @scenes; my $deviceNames; my $sceneNames;
     if ($device eq 'RHASSPY') {
         $type  //= 'generic';
         return respond( $hash, $data, getResponse($hash, 'NoValidData')) if $type !~ m{\Ageneric|control|info|scenes|rooms\z};
@@ -4663,11 +4664,12 @@ sub handleIntentGetState {
         if ( $type eq 'rooms' ) {
             my @rooms = getAllRhasspyMainRooms($hash);
             $roomNames = _array2andString( $hash, \@rooms);
+            $response =~ s{(\$\w+)}{$1}eegx;
+            return respond( $hash, $data, $response);
         }
 
-        my @names; my @scenes;
+        my @names;
         my @intents = qw(SetNumeric SetOnOff GetNumeric GetOnOff MediaControls GetState SetScene);
-        @intents = [] if $type eq 'rooms';
         @intents = qw(GetState GetNumeric) if $type eq 'info';
         @intents = qw(SetScene) if $type eq 'scenes';
 
@@ -4690,8 +4692,9 @@ sub handleIntentGetState {
         @names  = uniq(@names);
         @scenes = uniq(@scenes) if @scenes;
 
-        my $deviceNames = _array2andString( $hash, \@names );
-        my $sceneNames = !@scenes ? '' : _array2andString( $hash, \@scenes );
+        $deviceNames = _array2andString( $hash, \@names );
+        $sceneNames = !@scenes ? '' : _array2andString( $hash, \@scenes );
+
         $response =~ s{(\$\w+)}{$1}eegx;
         return respond( $hash, $data, $response);
     }
@@ -4699,7 +4702,18 @@ sub handleIntentGetState {
     my $deviceName = $device;
     my $intent = 'GetState';
 
-    $device = getDeviceByName($hash, $room, $device);
+    $device = getDeviceByName($hash, $room, $device) // return respond( $hash, $data, getResponse($hash, 'NoDeviceFound') );
+
+    if ( $type eq 'scenes' ) {
+        $response = getResponse( $hash, 'getRHASSPYOptions', $type );
+        @scenes = values %{$hash->{helper}{devicemap}{devices}{$device}{intents}{SetScene}->{SetScene}};
+        @scenes = uniq(@scenes) if @scenes;
+        $sceneNames = !@scenes ? '' : _array2andString( $hash, \@scenes );
+        $deviceNames = $deviceName;
+        $response =~ s{(\$\w+)}{$1}eegx;
+        return respond( $hash, $data, $response);
+    }
+
     $type //= 'GetState';
     my $mapping = getMapping($hash, $device, 'GetState', $type) // return respond( $hash, $data, getResponse($hash, 'NoMappingFound') );
 
@@ -4712,7 +4726,7 @@ sub handleIntentGetState {
     } elsif ( defined $mapping->{response} ) {
         $response = _getValue($hash, $device, _shuffle_answer($mapping->{response}), undef, $room);
         $response = _ReplaceReadingsVal($hash, _shuffle_answer($mapping->{response})) if !$response; #Beta-User: case: plain Text with [device:reading]
-    } elsif ( defined $data->{type} || $data->{Type} ) {
+    } elsif ( defined $data->{type} || defined $data->{Type} ) {
         my $reading = $data->{Reading} // 'STATE';
         $response = getResponse( $hash, 'getStateResponses', $type ) // getResponse( $hash, 'NoValidIntentResponse') ;
         $response =~ s{(\$\w+)}{$1}eegx;
@@ -6287,7 +6301,7 @@ yellow=rgb FFFF00</code></p>
   <li>SetScene</li> {Device} and {Scene} (it's recommended to use the $lng.fhemId.Scenes slot to get that generated automatically!).
   <li>GetTime</li>
   <li>GetDate</li>
-  <li>SetTimer</li> Timer info as described in SetTimedOnOff is mandatory, {Room} and/or {Label} are optional to distinguish between different timers. {CancelTimer} key will force RHASSPY to try to remove a running timer (using optional {Room} and/or {Label} key to identify the respective timer).
+  <li>SetTimer</li> Timer info as described in SetTimedOnOff is mandatory, {Room} and/or {Label} are optional to distinguish between different timers. {CancelTimer} key will force RHASSPY to try to remove a running timer (using optional {Room} and/or {Label} key to identify the respective timer), {GetTimer} key will be treated as request if there's a timer running (optionally also identified by {Room} and/or {Label} keys).
   Required tags to set a timer: at least one of {Hour}, {Hourabs}, {Min} or {Sec}. {Label} and {Room} are optional to distinguish between different timers. If {Hourabs} is provided, all timer info will be regarded as absolute time of day info, otherwise everything is calculated using a "from now" logic.
   <li>ConfirmAction</li>
   {Mode} with value 'OK'. All other calls will be interpreted as CancelAction intent call.
