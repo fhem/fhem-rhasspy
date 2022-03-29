@@ -172,10 +172,10 @@ All parameters are optional but changing some of them later may result in confus
 
 * **`encoding`**\
   If there are any problems with mutated vowels, it's possible to set a specific character encoding. Default is _utf8_.
-<!--
+
 * **`handleHotword`**\
-  Triggers the reading _hotword_ if a hotword is detected. See attribute [Attribute *rhasspyHotwords*](#attribute-rhasspyhotwords) for further details.
--->
+  Triggers the reading _hotword_ if a hotword is detected. See attribute [Attribute *rhasspyHotwords*](#attribute-rhasspyhotwords) for further details. Default is 0.
+
 
 Simple-Example for a define:
 ```
@@ -184,7 +184,7 @@ define Rhasspy RHASSPY
 
 Full-Example for a define:
 ```
-define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceType=.+ defaultRoom=wohnzimmer language=de fhemId=fhem1 prefix=rhasspy2 useGenericAttrs=0 encoding=cp-1252
+define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceType=.+ defaultRoom=wohnzimmer language=de fhemId=fhem1 prefix=rhasspy2 useGenericAttrs=0 encoding=cp-1252 handleHotword=1
 ```
 
 **Important**: After defining the device, it's recommended to set the attribute `IODev`, e.g. with `attr <deviceName> IODev <MQTT2_CLIENT deviceName>`.
@@ -195,7 +195,7 @@ define Rhasspy RHASSPY baseUrl=http://192.160.2.122:12101 devspec=genericDeviceT
   Creates a new - or overwrites an existing slot - in Rhasspy\
   Provide slotname, slotdata and (optional) info, if existing data shall be overwritten and training shall be initialized immediately afterwards.\
   First two arguments are required, third and fourth are optional.\
-  `overwrite` defaults to true, setting any other value than true will keep existing Rhasspy slot data.\
+  `overwrite` defaults to true, setting any other value than true will keep existing Rhasspy slot data.
 
   Examples:\
   `set <rhasspyDevice> customSlot mySlot a,b,c overwrite training`\
@@ -889,7 +889,7 @@ Example-Mappings:
 GetNumeric:currentVal=temperature,part=1,type=temperature
 GetNumeric:currentVal=pct,map=percent,minVal=0,maxVal=100,type=brightness
 GetNumeric:currentVal=volume,type=volume
-GetNumeric:currentVal=humidity,part=0,type=airHumidity
+GetNumeric:currentVal=humidity,part=0,type=humidity
 GetNumeric:currentVal=batteryPercent,type=battery
 ```
 
@@ -902,7 +902,7 @@ Arguments:
 * **type** To differentiate between multiple possible SetNumeric-Intents for the same device.
 
 Possible **type**s:
-* **airHumidity**
+* **humidity**
 * **battery**
 * **brightness**
 * **desired-temp**
