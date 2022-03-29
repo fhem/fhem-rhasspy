@@ -887,7 +887,7 @@ Example-Mappings:
 GetNumeric:currentVal=temperature,part=1,type=temperature
 GetNumeric:currentVal=pct,map=percent,minVal=0,maxVal=100,type=brightness
 GetNumeric:currentVal=volume,type=volume
-GetNumeric:currentVal=humidity,part=0,type=airHumidity
+GetNumeric:currentVal=humidity,part=0,type=humidity
 GetNumeric:currentVal=batteryPercent,type=battery
 ```
 
@@ -900,7 +900,7 @@ Arguments:
 * **type** To differentiate between multiple possible SetNumeric-Intents for the same device.
 
 Possible **type**s:
-* **airHumidity**
+* **humidity**
 * **battery**
 * **brightness**
 * **desired-temp**
