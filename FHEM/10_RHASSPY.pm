@@ -1,4 +1,4 @@
-# $Id: 10_RHASSPY.pm 25894 2022-03-29 a Beta-User $
+# $Id: 10_RHASSPY.pm 25894 2022-03-30 Beta-User $
 ###########################################################################
 #
 # FHEM RHASSPY module (https://github.com/rhasspy)
@@ -106,6 +106,7 @@ my $languagevars = {
     'DefaultChangeIntentRequestRawInput' => 'change command to $rawInput',
     'RequestChoiceDevice' => 'there are several possible devices, choose between $first_items and $last_item',
     'RequestChoiceRoom' => 'more than one possible device, please choose one of the following rooms $first_items and $last_item',
+    'RequestChoiceGeneric' => 'there are several options, choose between $options',
     'DefaultChoiceNoOutstanding' => "no choice expected",
     'NoMinConfidence' => 'minimum confidence not given, level is $confidence',
     'timerSet'   => {
@@ -243,7 +244,7 @@ BEGIN {
     Log3
     defs attr cmds modules L
     DAYSECONDS HOURSECONDS MINUTESECONDS
-    init_done
+    init_done fhem_started
     InternalTimer
     RemoveInternalTimer
     AssignIoPort
@@ -334,7 +335,7 @@ sub Define {
 
     $hash->{defaultRoom} = $defaultRoom;
     my $language = $h->{language} // shift @{$anon} // lc AttrVal('global','language','en');
-    $hash->{MODULE_VERSION} = '0.5.25';
+    $hash->{MODULE_VERSION} = '0.5.26';
     $hash->{baseUrl} = $Rhasspy;
     initialize_Language($hash, $language) if !defined $hash->{LANGUAGE} || $hash->{LANGUAGE} ne $language;
     $hash->{LANGUAGE} = $language;
@@ -875,7 +876,7 @@ sub initialize_rhasspyTweaks {
 sub configure_DialogManager {
     my $hash      = shift // return;
     my $siteId    = shift // 'null'; #ReadingsVal( $hash->{NAME}, 'siteIds', 'default' ) // return;
-    my $toDisable = shift // [qw(ConfirmAction CancelAction ChoiceRoom ChoiceDevice)];
+    my $toDisable = shift // [qw(ConfirmAction CancelAction Choice ChoiceRoom ChoiceDevice)];
     my $enable    = shift // q{false};
     my $timer     = shift;
     my $retArr    = shift;
@@ -989,7 +990,7 @@ sub init_custom_intents {
 
 sub initialize_devicemap {
     my $hash = shift // return;
-    
+    Log3($hash->{NAME}, 5, "initialize_devicemap called");
     my $devspec = $hash->{devspec};
     delete $hash->{helper}{devicemap};
 
@@ -1002,6 +1003,7 @@ sub initialize_devicemap {
         _analyze_genDevType($hash, $_) if $hash->{useGenericAttrs};
         _analyze_rhassypAttr($hash, $_);
     }
+    InternalTimer(time+125, \&initialize_devicemap, $hash ) if $fhem_started + 90 > time;
     return;
 }
 
@@ -1326,11 +1328,16 @@ sub _analyze_genDevType {
     }
 
     if ( $gdt eq 'info' ) {
-        my $r = $defs{$device}{READINGS};
         $currentMapping->{GetState}->{$gdt} = {currentVal => 'STATE', type => 'STATE' };
         $currentMapping = _analyze_genDevType_setter( $hash, $device, $allset, $currentMapping );
         $hash->{helper}{devicemap}{devices}{$device}{intents} = $currentMapping;
     }
+
+    if ( $gdt eq 'scene' ) {
+        $currentMapping = _analyze_genDevType_setter( $hash, $device, $allset, $currentMapping );
+        $hash->{helper}{devicemap}{devices}{$device}{intents} = $currentMapping;
+    }
+
     return;
 }
 
@@ -1372,10 +1379,12 @@ sub _analyze_genDevType_setter {
     my $mapping = shift // {};
 
     my $allValMappings = {
-        MediaControls => { 
+        MediaControls => {
             cmdPlay => 'play', cmdPause => 'pause' ,cmdStop => 'stop', cmdBack => 'previous', cmdFwd => 'next', chanUp => 'channelUp', chanDown => 'channelDown' },
-        GetState => { 
+        GetState => {
             update => 'reread|update|reload' },
+        SetScene => {
+            cmdBack => 'previousScene', cmdFwd => 'nextScene' }
         };
     for my $okey ( keys %{$allValMappings} ) {
         my $ikey = $allValMappings->{$okey};
@@ -1420,7 +1429,6 @@ sub _analyze_genDevType_setter {
             my $clscene = $scname;
             # cleanup HUE scenes
             if ($clscene =~ m{[#]}xms) {
-                #next if $clscene =~ m{[#]\[id}xms;
                 $clscene = (split m{[#]\[id}xms, $clscene)[0] if $clscene =~ m{[#]\[id}xms; 
                 $clscene =~ s{[#]}{ }gxm;
                 $scname =~ s{.*[#]\[(id=.+)]}{$1}xms if $scname =~ m{[#]\[id}xms;
@@ -1914,7 +1922,7 @@ sub getAllRhasspyScenes {
         push @names, split m{,}x, $hash->{helper}{devicemap}{devices}{$device}->{names}; 
         my $scenes = $hash->{helper}{devicemap}{devices}{$device}{intents}{SetScene}->{SetScene};
         for (keys %{$scenes}) {
-            push @sentences, qq{( $scenes->{$_} ){Scene:$_}};
+            push @sentences, qq{( $scenes->{$_} ){Scene:$_}} if $scenes->{$_} ne 'cmdBack' && $scenes->{$_} ne 'cmdFwd' ;
         }
     }
 
@@ -2773,10 +2781,13 @@ my $dispatchFns = {
     GetTime             => \&handleIntentGetTime,
     GetDate             => \&handleIntentGetDate,
     SetTimer            => \&handleIntentSetTimer,
+    GetTimer            => \&handleIntentGetTimer,
+    Timer               => \&handleIntentSetTimer,
     ConfirmAction       => \&handleIntentConfirmAction,
     CancelAction        => \&handleIntentCancelAction,
     ChoiceRoom          => \&handleIntentChoiceRoom,
     ChoiceDevice        => \&handleIntentChoiceDevice,
+    Choice              => \&handleIntentChoice,
     MsgDialog           => \&handleIntentMsgDialog,
     ReSpeak             => \&handleIntentReSpeak
 };
@@ -3379,7 +3390,7 @@ sub respond {
     } elsif ( $delay ) {
         $sendData->{text} = $response;
         $topic = 'continueSession';
-        my @ca_strings = configure_DialogManager($hash,$data->{siteId}, [qw(ConfirmAction ChoiceRoom ChoiceDevice)], 'false', undef, 1 );
+        my @ca_strings = configure_DialogManager($hash,$data->{siteId}, [qw(ConfirmAction Choice ChoiceRoom ChoiceDevice)], 'false', undef, 1 );
         $sendData->{intentFilter} = [@ca_strings];
     } else {
         $sendData->{text} = $response;
@@ -4416,7 +4427,7 @@ sub handleIntentSetNumeric {
         my $all = $device->[2];
         my $choice = $device->[3];
         $data->{customData} = $all;
-        my $toActivate = $choice eq 'RequestChoiceDevice' ? [qw(ChoiceDevice CancelAction)] : [qw(ChoiceRoom CancelAction)];
+        my $toActivate = $choice eq 'RequestChoiceDevice' ? [qw(ChoiceDevice  Choice CancelAction)] : [qw(ChoiceRoom  Choice CancelAction)];
         $device = $first;
         Log3($hash->{NAME}, 5, "More than one device possible, response is $response, first is $first, all are $all, type is $choice");
         return setDialogTimeout($hash, $data, _getDialogueTimeout($hash), $response, $toActivate);
@@ -4575,7 +4586,7 @@ sub handleIntentGetNumeric {
         my $all = $device->[2];
         my $choice = $device->[3];
         $data->{customData} = $all;
-        my $toActivate = $choice eq 'RequestChoiceDevice' ? [qw(ChoiceDevice CancelAction)] : [qw(ChoiceRoom CancelAction)];
+        my $toActivate = $choice eq 'RequestChoiceDevice' ? [qw(ChoiceDevice Choice CancelAction)] : [qw(ChoiceRoom  Choice CancelAction)];
         $device = $first;
         Log3($hash->{NAME}, 5, "More than one device possible, response is $response, first is $first, all are $all, type is $choice");
         return setDialogTimeout($hash, $data, _getDialogueTimeout($hash), $response, $toActivate);
@@ -4811,6 +4822,7 @@ sub handleIntentSetScene{
     return $hash->{NAME} if !$data->{Confirmation} && getNeedsConfirmation( $hash, $data, 'SetScene' );
 
     my $cmd = qq(scene $scene);
+    $cmd = $scene if $scene eq 'cmdBack' || $scene eq 'cmdFwd';
 
     # execute Cmd
     analyzeAndRunCmd($hash, $device, $cmd);
@@ -5137,8 +5149,8 @@ sub handleIntentSetColorGroup {
 
 
 
-# Handle incoming SetTimer intents
-sub handleIntentSetTimer {
+# Handle incoming Timer, SetTimer and GetTimer intents
+sub handleIntentTimer {
     my $hash = shift;
     my $data = shift // return;
     my $siteId = $data->{siteId} // return;
@@ -5270,6 +5282,23 @@ sub handleIntentSetTimer {
     return $name;
 }
 
+sub handleIntentGetTimer {
+    my $hash = shift;
+    my $data = shift // return;
+    my $siteId = $data->{siteId} // return;
+    $data->{GetTimer} = 'redirected from intent GetTimer';
+    return handleIntentTimer($hash, $data);
+}
+
+sub handleIntentSetTimer {
+    my $hash = shift;
+    my $data = shift // return;
+    my $siteId = $data->{siteId} // return;
+    $data->{'.remark'} = 'redirected from intent SetTimer';
+    return handleIntentTimer($hash, $data);
+}
+
+
 
 sub handleIntentNotRecognized {
     my $hash = shift // return;
@@ -5395,11 +5424,11 @@ sub handleIntentConfirmAction {
     return $device;
 }
 
-sub handleIntentChoiceRoom {
+sub handleIntentChoice {
     my $hash = shift // return;
     my $data = shift // return;
 
-    Log3($hash->{NAME}, 5, 'handleIntentChoiceRoom called');
+    Log3($hash->{NAME}, 5, 'handleIntentChoice called');
 
     my $identity = qq($data->{sessionId});
     my $data_old = $hash->{helper}{'.delayed'}->{$identity};
@@ -5408,10 +5437,9 @@ sub handleIntentChoiceRoom {
 
     return respond( $hash, $data, getResponse( $hash, 'DefaultChoiceNoOutstanding' ) ) if !defined $data_old;
 
-    $data_old->{siteId} = $data->{siteId};
-    $data_old->{sessionId} = $data->{sessionId};
-    $data_old->{requestType} = $data->{requestType};
-    $data_old->{Room} = $data->{Room};
+    for ( qw( siteId sessionId requestType Room Device Scene ) ) {
+        $data_old->{$_} = $data->{$_} if defined $data->{$_};
+    }
 
     my $intent = $data_old->{intent};
     my $device = $hash->{NAME};
@@ -5424,34 +5452,23 @@ sub handleIntentChoiceRoom {
     return $device;
 }
 
+
+sub handleIntentChoiceRoom {
+    my $hash = shift // return;
+    my $data = shift // return;
+
+    Log3($hash->{NAME}, 5, 'handleIntentChoiceRoom called');
+
+    return handleIntentChoice($hash, $data);
+}
+
 sub handleIntentChoiceDevice {
     my $hash = shift // return;
     my $data = shift // return;
 
     Log3($hash->{NAME}, 5, 'handleIntentChoiceDevice called');
 
-    #my $data_old = $data->{customData};
-    my $identity = qq($data->{sessionId});
-    my $data_old = $hash->{helper}{'.delayed'}->{$identity};
-    delete $hash->{helper}{'.delayed'}{$identity};
-    deleteSingleRegIntTimer($identity, $hash);
-
-    return respond( $hash, $data, getResponse( $hash, 'DefaultChoiceNoOutstanding' ) ) if ! defined $data_old;
-
-    $data_old->{siteId} = $data->{siteId};
-    $data_old->{sessionId} = $data->{sessionId};
-    $data_old->{requestType} = $data->{requestType};
-    $data_old->{Device} = $data->{Device};
-
-    my $intent = $data_old->{intent};
-    my $device = $hash->{NAME};
-
-    # Passenden Intent-Handler aufrufen
-    if (ref $dispatchFns->{$intent} eq 'CODE') {
-        $device = $dispatchFns->{$intent}->($hash, $data_old);
-    }
-
-    return $device;
+    return handleIntentChoice($hash, $data);
 }
 
 
@@ -5722,7 +5739,12 @@ So all parameters in define should be provided in the <i>key=value</i> form. In 
   <li><b>prefix</b>: May be used to distinguishe between different instances of RHASSPY on the FHEM-internal side.<br>
   Might be usefull, if you have several instances of RHASSPY in one FHEM running and want e.g. to use different identifier for groups and rooms (e.g. a different language). Not recommended to be set if just one RHASSPY device is defined.</li>
   <a id="RHASSPY-genericDeviceType"></a>
-  <li><b>useGenericAttrs</b>: Formerly, RHASSPY only used it's own attributes (see list below) to identifiy options for the subordinated devices you want to control. Today, it is capable to deal with a couple of commonly used <code>genericDeviceType</code> (<i>switch</i>, <i>light</i>, <i>thermostat</i>, <i>thermometer</i>, <i>blind</i> and <i>media</i>), so it will add <code>genericDeviceType</code> to the global attribute list and activate RHASSPY's feature to estimate appropriate settings - similar to rhasspyMapping. <code>useGenericAttrs=0</code> will deactivate this. (do not set this unless you know what you are doing!). Note: <code>homebridgeMapping</code> atm. is not used as source for appropriate mappings in RHASSPY.</li>
+  <li><b>useGenericAttrs</b>: Formerly, RHASSPY only used it's own attributes (see list below) to identifiy options for the subordinated devices you want to control. Today, it is capable to deal with a couple of commonly used <code>genericDeviceType</code> (<i>switch</i>, <i>light</i>, <i>thermostat</i>, <i>thermometer</i>, <i>blind</i>, <i>media</i>, <i>scene</i> and <i>info</i>), so it will add <code>genericDeviceType</code> to the global attribute list and activate RHASSPY's feature to estimate appropriate settings - similar to rhasspyMapping. <code>useGenericAttrs=0</code> will deactivate this. (do not set this unless you know what you are doing!). Notes:
+    <ul>
+      <li>As some devices may not directly provide all their setter infos at startup time, RHASSPY will do a second automatic devicemap update 2 minutes after each FHEM start. In the meantime not all commands may work.</li>
+      <li><code>homebridgeMapping</code> atm. is not used as source for appropriate mappings in RHASSPY.</li>
+    </ul>
+  </li>
   <li><b>handleHotword</b>: Trigger Reading <i>hotword</i> in case of a hotword is detected. See attribute <a href="#RHASSPY-attr-rhasspyHotwords">rhasspyHotwords</a> for further reference.</li>
   <li><b>Babble</b>: <a href="#RHASSPY-experimental"><b>experimental!</b></a> Points to a <a href="#Babble ">Babble</a> device. Atm. only used in case if text input from an <a href="#AMADCommBridge">AMADCommBridge</a> is processed, see <a href="#RHASSPY-attr-rhasspySTT">rhasspySTT</a> for details.</li>
   <li><b>encoding</b>: <b>most likely deprecated!</b> May be helpfull in case you experience problems in conversion between RHASSPY (module) and Rhasspy (service). Example: <code>encoding=cp-1252</code>. Do not set this unless you experience encoding problems!</li>
@@ -6301,11 +6323,14 @@ yellow=rgb FFFF00</code></p>
   <li>SetScene</li> {Device} and {Scene} (it's recommended to use the $lng.fhemId.Scenes slot to get that generated automatically!).
   <li>GetTime</li>
   <li>GetDate</li>
-  <li>SetTimer</li> Timer info as described in SetTimedOnOff is mandatory, {Room} and/or {Label} are optional to distinguish between different timers. {CancelTimer} key will force RHASSPY to try to remove a running timer (using optional {Room} and/or {Label} key to identify the respective timer), {GetTimer} key will be treated as request if there's a timer running (optionally also identified by {Room} and/or {Label} keys).
+  <li>Timer</li> Timer info as described in <i>SetTimedOnOff</i> is mandatory, {Room} and/or {Label} are optional to distinguish between different timers. {CancelTimer} key will force RHASSPY to try to remove a running timer (using optional {Room} and/or {Label} key to identify the respective timer), {GetTimer} key will be treated as request if there's a timer running (optionally also identified by {Room} and/or {Label} keys).
   Required tags to set a timer: at least one of {Hour}, {Hourabs}, {Min} or {Sec}. {Label} and {Room} are optional to distinguish between different timers. If {Hourabs} is provided, all timer info will be regarded as absolute time of day info, otherwise everything is calculated using a "from now" logic.
+  <li>SetTimer</li> Set a timer, required info as mentionned in <i>Timer</i>
+  <li>GetTimer</li> Get timer info as mentionned in <i>Timer</i>, key {GetTimer} is not explicitely required.
   <li>ConfirmAction</li>
   {Mode} with value 'OK'. All other calls will be interpreted as CancelAction intent call.
   <li>CancelAction</li>{Mode} is recommended.
+  <li>Choice</li>One or more of {Room}, {Device} or {Scene}
   <li>ChoiceRoom</li>{Room}
   <li>ChoiceDevice</li>{Device}
   <li>ReSpeak</li>
