@@ -1,4 +1,4 @@
-# $Id: 10_RHASSPY.pm 25899 2022-03-31 04:16:26Z Beta-User $
+# $Id: 10_RHASSPY.pm 25899 2022-03-31 Beta-User $
 ###########################################################################
 #
 # FHEM RHASSPY module (https://github.com/rhasspy)
@@ -1067,6 +1067,7 @@ sub _analyze_rhassypAttr {
 
     #Hash mit {FHEM-Device-Name}{$intent}{$type}?
     my $mappingsString = AttrVal($device, "${prefix}Mapping", q{});
+    delete $hash->{helper}{devicemap}{devices}{$device}{intents} if $mappingsString;
     for (split m{\n}x, $mappingsString) {
         my ($key, $val) = split m{:}x, $_, 2;
         next if !$val;
@@ -1123,7 +1124,7 @@ sub _analyze_rhassypAttr {
         if ( $key eq 'scenes' && defined $hash->{helper}{devicemap}{devices}{$device}{intents}{SetScene} ) {
             my $combined = _combineHashes( $hash->{helper}{devicemap}{devices}{$device}{intents}{SetScene}->{SetScene}, $named);
             for (keys %{$combined}) {
-                delete $combined->{$_} if $combined->{$_} eq 'none' || defined $named->{all} && $named->{all} eq 'none';
+                delete $combined->{$_} if $combined->{$_} eq 'none' || defined $named->{all} && $named->{all} eq 'none' || defined $named->{rest} && $named->{rest} eq 'none' && !defined $named->{$_};
             }
             keys %{$combined} ?
                 $hash->{helper}{devicemap}{devices}{$device}{intents}{SetScene}->{SetScene} = $combined
@@ -4706,7 +4707,7 @@ sub handleIntentGetState {
                 next if !defined $hash->{helper}{devicemap}{devices}{$dev}->{intents}->{$intent};
                 push @names, $hash->{helper}{devicemap}{devices}{$dev}->{alias};
                 if ($intent eq 'SetScene') {
-                    @scenes = (@scenes, (values %{$hash->{helper}{devicemap}{devices}{$dev}{intents}{SetScene}->{SetScene}}));
+                    @scenes = (@scenes, grep { $_ !~ m{cmdFwd|cmdBack}xms} values %{$hash->{helper}{devicemap}{devices}{$dev}{intents}{SetScene}->{SetScene}} );
                 }
             }
         }
@@ -5548,7 +5549,7 @@ sub setPlayWav {
     $repeats--;
     my $attime = strftime( '%H:%M:%S', gmtime $wait );
     return InternalTimer(time, sub (){CommandDefMod($hash, "-temporary $id at +$attime set $name play siteId=\"$siteId\" path=\"$filename\" repeats=$repeats wait=$wait id=$id")}, $hash ) if $repeats;
-    return InternalTimer(time, sub (){CommandDefMod($hash, "-temporary $id at +$attime set $name play siteId=\"$siteId\" path=\"$filename\" repeats=$repeats wait=$wait")}, $hash ) if !$id;
+    #return InternalTimer(time, sub (){CommandDefMod($hash, "-temporary $id at +$attime set $name play siteId=\"$siteId\" path=\"$filename\" repeats=$repeats wait=$wait")}, $hash ) if !$id; #Beta-User: nonsense w/o $id?!?
     return InternalTimer(time, sub (){CommandDefMod($hash, "-temporary $id at +$attime set $name play siteId=\"$siteId\" path=\"$filename\" repeats=$repeats wait=$wait; deletereading $name $id")}, $hash );
 }
 
@@ -6298,7 +6299,7 @@ yellow=rgb FFFF00</code></p>
       <li><b>scenes</b>
         <p><code>attr lamp1 rhasspySpecials scenes:scene2="Kino zu zweit" scene3=Musik scene1=none scene4=none</code></p>
         <p>Explanation:
-        <p>If set, the label provided will be sent to Rhasspy instead of the <i>tech names</i> (derived from available setters). Keyword <i>none</i> will delete the scene from the internal list, setting the combination <i>all=none</i> will exclude the entire device from beeing recognized for SetScene.</p>
+        <p>If set, the value (e.g. "Kino zu zweit") provided will be sent to Rhasspy instead of the <i>tech names</i> (e.g. "scene2", derived from available setters). Value <i>none</i> will delete the scene from the internal list, setting the combination <i>all=none</i> will exclude the entire device from beeing recognized for SetScene, <i>rest=none</i> will only include the labeled scenes. These values finally will be what's expected to be spoken to identificate a specific scene.</p>
       </li>
       <li><b>blacklistIntents</b>
         <p><code>attr weather rhasspySpecials blacklistIntents:MediaControls</code></p>
