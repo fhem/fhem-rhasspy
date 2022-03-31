@@ -1,4 +1,4 @@
-# $Id: 10_RHASSPY.pm 25899 2022-03-31 Beta-User $
+# $Id: 10_RHASSPY.pm 25899 2022-03-31 a Beta-User $
 ###########################################################################
 #
 # FHEM RHASSPY module (https://github.com/rhasspy)
@@ -868,6 +868,13 @@ sub initialize_rhasspyTweaks {
             }
             $hash->{helper}{tweaks}{confidenceMin}{default} = $unnamedParams->[0] if @{$unnamedParams} && looks_like_number($unnamedParams->[0]);
         }
+        if ($line =~ m{\A[\s]*(mappingOverwrite)[\s]*=}x) {
+            ($tweak, $values) = split m{=}x, $line, 2;
+            $tweak = trim($tweak);
+            $values= trim($values);
+            return "Error in $line! No content provided!" if !length $values && $init_done;
+            $hash->{helper}{tweaks}{$tweak} = $values;
+        }
     }
     return configure_DialogManager($hash) if $init_done;
     return;
@@ -990,7 +997,6 @@ sub init_custom_intents {
 
 sub initialize_devicemap {
     my $hash = shift // return;
-    Log3($hash->{NAME}, 5, "initialize_devicemap called");
     my $devspec = $hash->{devspec};
     delete $hash->{helper}{devicemap};
 
@@ -1067,7 +1073,7 @@ sub _analyze_rhassypAttr {
 
     #Hash mit {FHEM-Device-Name}{$intent}{$type}?
     my $mappingsString = AttrVal($device, "${prefix}Mapping", q{});
-    delete $hash->{helper}{devicemap}{devices}{$device}{intents} if $mappingsString;
+    delete $hash->{helper}{devicemap}{devices}{$device}{intents} if $mappingsString && defined $hash->{helper}->{tweaks} && $hash->{helper}{tweaks}->{mappingOverwrite};
     for (split m{\n}x, $mappingsString) {
         my ($key, $val) = split m{:}x, $_, 2;
         next if !$val;
@@ -6104,6 +6110,12 @@ i="i am hungry" f="set Stove on" d="Stove" c="would you like roast pork"</code><
         <p>By default, RHASSPY will use a minimum <i>confidence</i> level of <i>0.66</i>, otherwise no command will be executed. You may change this globally (key: default) or more granular for each intent specified.<br>
         Example: <p><code>confidenceMin= default=0.6 SetMute=0.4 SetOnOffGroup=0.8 SetOnOff=0.8</code></p>
       </li>
+      <a id="RHASSPY-attr-rhasspyTweaks-mappingOverwrite"></a>
+      <li><b>mappingOverwrite</b>
+        <p>If set, any value set in rhasspyMapping attribute will delete all content detected by automated mapping analysis (default: only overwrite keys set in devices rhasspyMapping attributes.</p>
+        <p>Example: <p><code>mappingOverwrite=1</code></p>
+      </li>
+
     </ul>
   </li>
   <li>
@@ -6303,10 +6315,9 @@ yellow=rgb FFFF00</code></p>
       </li>
       <li><b>blacklistIntents</b>
         <p><code>attr weather rhasspySpecials blacklistIntents:MediaControls</code></p>
-        <p>Explanation:
+        <p>Explanation:</p>
         <p>If set, the blacklisted intents will be deleted after automated mapping analysis.</p>
       </li>
-
     </ul>
   </li>
   <li>
