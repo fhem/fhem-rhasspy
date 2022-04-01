@@ -1,4 +1,4 @@
-# $Id: 10_RHASSPY.pm 25899 2022-03-31 a Beta-User $
+# $Id: 10_RHASSPY.pm 25904 2022-04-01 03:43:04Z Beta-User $
 ###########################################################################
 #
 # FHEM RHASSPY module (https://github.com/rhasspy)
@@ -1074,9 +1074,12 @@ sub _analyze_rhassypAttr {
     #Hash mit {FHEM-Device-Name}{$intent}{$type}?
     my $mappingsString = AttrVal($device, "${prefix}Mapping", q{});
     delete $hash->{helper}{devicemap}{devices}{$device}{intents} if $mappingsString && defined $hash->{helper}->{tweaks} && $hash->{helper}{tweaks}->{mappingOverwrite};
+    my @dones;
     for (split m{\n}x, $mappingsString) {
         my ($key, $val) = split m{:}x, $_, 2;
         next if !$val;
+        delete $hash->{helper}{devicemap}{devices}{$device}{intents}->{$key} if !grep {$key} @dones;
+        push @dones, $key;
         my $currentMapping = splitMappingString($val) // next;
         # Übersetzen, falls möglich:
         $currentMapping->{type} //= $key;
@@ -2392,7 +2395,8 @@ sub exportMapping {
                 $result .= "${key}:";
                 @tokens = ();
                 for my $sskey ( keys %{$map->{$skey}} ) {
-                    push @tokens, "${sskey}=$map->{$skey}->{$sskey}";
+                    my $special = $skey eq 'desired-temp' && $map->{$skey}->{$sskey} eq 'temperature' ? 'desired-temp' : "$map->{$skey}->{$sskey}";#Beta-User: desired-temp?
+                    push @tokens, "${sskey}=$special"; 
                 }
                 $result .= join q{,}, @tokens;
             }
@@ -4713,7 +4717,10 @@ sub handleIntentGetState {
                 next if !defined $hash->{helper}{devicemap}{devices}{$dev}->{intents}->{$intent};
                 push @names, $hash->{helper}{devicemap}{devices}{$dev}->{alias};
                 if ($intent eq 'SetScene') {
-                    @scenes = (@scenes, grep { $_ !~ m{cmdFwd|cmdBack}xms} values %{$hash->{helper}{devicemap}{devices}{$dev}{intents}{SetScene}->{SetScene}} );
+                    for my $scene (keys %{$hash->{helper}{devicemap}{devices}{$dev}{intents}{SetScene}->{SetScene}} ) {
+                        next if $scene eq 'cmdFwd' || $scene eq 'cmdBack';
+                        push @scenes , $hash->{helper}{devicemap}{devices}{$dev}{intents}{SetScene}->{SetScene}->{$scene};
+                    }
                 }
             }
         }
@@ -5930,7 +5937,7 @@ After changing something relevant within FHEM for either the data structure in</
 <ul>
   <li>
     <a id="RHASSPY-get-export_mapping"></a><b>export_mapping &lt;devicename&gt;</b>
-    <p>Exports a "classical" rhasspyMapping attribute value for the provided device. You may find this usefull to adopt that further to your individual needs.</p>
+    <p><a href="#RHASSPY-experimental"><b>experimental!</b></a> Exports a "classical" rhasspyMapping attribute value for the provided device. You may find this usefull to adopt that further to your individual needs. Will not completely work in all cases, especially wrt. to SetScene and HUEBridge formated scenes.</p>
   </li>
   <li>
     <a id="RHASSPY-get-test_file"></a><b>test_file &lt;path and filename&gt;</b>
