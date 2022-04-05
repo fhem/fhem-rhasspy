@@ -1,4 +1,4 @@
-# $Id: 10_RHASSPY.pm 25920 2022-04-05 + some modifications Beta-User $
+# $Id: 10_RHASSPY.pm 25925 2022-04-05 17:10:53Z Beta-User $
 ###########################################################################
 #
 # FHEM RHASSPY module (https://github.com/rhasspy)
@@ -1534,7 +1534,7 @@ sub initialize_msgDialog {
 
     return disable_msgDialog($hash) if $mode ne 'set';
 
-    return 'No global configuration device defined: Please define a msgConfig device first' if !$modules{msgConfig}{defptr};
+    return 'No global configuration device defined: Please define a msgConfig device first' if !$modules{msgConfig}{defptr} && $attrVal;
     for my $line (split m{\n}x, $attrVal) {
         next if !length $line;
         my ($keywd, $values) = split m{=}x, $line, 2;
@@ -1548,7 +1548,7 @@ sub initialize_msgDialog {
         }
     }
 
-    return disable_msgDialog($hash) if !keys %{$hash->{helper}->{msgDialog}->{config}};
+    return disable_msgDialog($hash) if !$attrVal || !keys %{$hash->{helper}->{msgDialog}->{config}};
     if ( !defined $hash->{helper}->{msgDialog}->{config}->{allowed} ) {
         delete $hash->{helper}->{msgDialog};
         return 'Setting the allowed key is mandatory!' ;
