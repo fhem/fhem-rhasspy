@@ -1,4 +1,4 @@
-# $Id: 10_RHASSPY.pm 25925 2022-04-05 17:10:53Z Beta-User $
+# $Id: 10_RHASSPY.pm 25925 2022-04-06 Beta-User $
 ###########################################################################
 #
 # FHEM RHASSPY module (https://github.com/rhasspy)
@@ -83,31 +83,32 @@ my $languagevars = {
       }
    },
   'responses' => { 
-    'DefaultError' => "Sorry but something seems not to work as expected",
+    'DefaultError' => "Sorry but something seems not to work as expected!",
+    'ContinueSession' => "Something else? | Any more wishes?",
     'NoValidResponse' => 'Error. respond function called without valid response!',
     'NoValidIntentResponse' => 'Error. respond function called by $intent without valid response!',
     'NoIntentRecognized' => 'Your input could not be assigned to one of the known intents!',
-    'NoValidData' => "Sorry but the received data is not sufficient to derive any action",
-    'NoDeviceFound' => "Sorry but I could not find a matching device",
-    'NoTimedOnDeviceFound' => "Sorry but device does not support requested timed on or off command",
-    'NoMappingFound' => "Sorry but I could not find a suitable mapping",
-    'NoNewValDerived' => "Sorry but I could not calculate a new value to set",
-    'NoActiveMediaDevice' => "Sorry no active playback device",
-    'NoMediaChannelFound' => "Sorry but requested channel seems not to exist",
+    'NoValidData' => "Sorry but the received data is not sufficient to derive any action.",
+    'NoDeviceFound' => "Sorry but I could not find a matching device.",
+    'NoTimedOnDeviceFound' => "Sorry but device does not support requested timed on or off command.",
+    'NoMappingFound' => "Sorry but I could not find a suitable mapping.",
+    'NoNewValDerived' => "Sorry but I could not calculate a new value to set.",
+    'NoActiveMediaDevice' => "Sorry no active playback device.",
+    'NoMediaChannelFound' => "Sorry but requested channel seems not to exist.",
     'DefaultConfirmation' => "OK",
-    'DefaultConfirmationBack' => "So once more",
-    'DefaultConfirmationTimeout' => "Sorry too late to confirm",
-    'DefaultCancelConfirmation' => "Thanks aborted",
+    'DefaultConfirmationBack' => "So once more.",
+    'DefaultConfirmationTimeout' => "Sorry, too late to confirm.",
+    'DefaultCancelConfirmation' => "Thanks, aborted.",
     'SilentCancelConfirmation' => "",
-    'DefaultConfirmationReceived' => "ok will do it",
-    'DefaultConfirmationNoOutstanding' => "no command is awaiting confirmation",
-    'DefaultConfirmationRequestRawInput' => 'please confirm: $rawInput',
-    'DefaultChangeIntentRequestRawInput' => 'change command to $rawInput',
-    'RequestChoiceDevice' => 'there are several possible devices, choose between $first_items and $last_item',
-    'RequestChoiceRoom' => 'more than one possible device, please choose one of the following rooms $first_items and $last_item',
-    'RequestChoiceGeneric' => 'there are several options, choose between $options',
-    'DefaultChoiceNoOutstanding' => "no choice expected",
-    'NoMinConfidence' => 'minimum confidence not given, level is $confidence',
+    'DefaultConfirmationReceived' => "Ok, will do it!",
+    'DefaultConfirmationNoOutstanding' => "No command is awaiting confirmation!",
+    'DefaultConfirmationRequestRawInput' => 'Please confirm: $rawInput!',
+    'DefaultChangeIntentRequestRawInput' => 'Change command to $rawInput!',
+    'RequestChoiceDevice' => 'There are several possible devices, choose between $first_items and $last_item.',
+    'RequestChoiceRoom' => 'More than one possible device, please choose one of the following rooms $first_items and $last_item.',
+    'RequestChoiceGeneric' => 'There are several options, choose between $options.',
+    'DefaultChoiceNoOutstanding' => "No choice expected!",
+    'NoMinConfidence' => 'Minimum confidence not given, level is $confidence',
     'timerSet'   => {
         '0' => '$label in room $room has been set to $seconds seconds',
         '1' => '$label in room $room has been set to $minutes minutes $seconds',
@@ -122,40 +123,40 @@ my $languagevars = {
         '1' =>  '$label in room $room expired'
     },
     'timerCancellation' => '$label for $room deleted',
-    'timeRequest' => 'it is $hour o clock $min minutes',
-    'weekdayRequest' => 'today is $weekDay, $month the $day., $year',
+    'timeRequest' => 'It is $hour o clock $min minutes',
+    'weekdayRequest' => 'Today is $weekDay, $month the $day., $year',
     'duration_not_understood'   => "Sorry I could not understand the desired duration",
-    'reSpeak_failed'   => 'i am sorry i can not remember',
+    'reSpeak_failed'   => 'I am sorry i can not remember',
     'Change' => {
-      'humidity'     => 'air humidity in $location is $value percent',
+      'humidity'     => 'Air humidity in $location is $value percent',
       'battery'      => {
-        '0' => 'battery level in $location is $value',
-        '1' => 'battery level in $location is $value percent'
+        '0' => 'Battery level in $location is $value',
+        '1' => 'Battery level in $location is $value percent'
       },
       'brightness'   => '$device was set to $value',
       'setTarget'    => '$device is set to $value',
-      'soilMoisture' => 'soil moisture in $location is $value percent',
+      'soilMoisture' => 'Soil moisture in $location is $value percent',
       'temperature'  => {
-        '0' => 'temperature in $location is $value',
-        '1' => 'temperature in $location is $value degrees',
+        '0' => 'Temperature in $location is $value',
+        '1' => 'Temperature in $location is $value degrees',
       },
-      'desired-temp' => 'target temperature for $location is set to $value degrees',
+      'desired-temp' => 'Target temperature for $location is set to $value degrees',
       'volume'       => '$device set to $value',
-      'waterLevel'   => 'water level in $location is $value percent',
+      'waterLevel'   => 'Water level in $location is $value percent',
       'knownType'    => '$mappingType in $location is $value percent',
-      'unknownType'  => 'value in $location is $value percent'
+      'unknownType'  => 'Value in $location is $value percent'
     },
     'getStateResponses' => {
       'STATE'   => '$deviceName value is [$device:STATE]',
-      'price'   => 'current price of $reading in $deviceName is [$device:$reading:d]',
+      'price'   => 'Current price of $reading in $deviceName is [$device:$reading:d]',
       'reading' => '[$device:$reading]',
-      'update'  => 'initiated update for $deviceName'
+      'update'  => 'Initiated update for $deviceName'
     },
     'getRHASSPYOptions' => {
-      'generic' => 'actions to devices may be initiated or information known by your automation can be requested',
-      'control' => 'in $room amongst others the following devices can be controlled $deviceNames',
-      'info'    => 'especially $deviceNames may serve as information source in $room',
-      'rooms'   => 'amongst others i know $roomNames as rooms',
+      'generic' => 'Actions to devices may be initiated or information known by your automation can be requested',
+      'control' => 'In $room amongst others the following devices can be controlled $deviceNames',
+      'info'    => 'Especially $deviceNames may serve as information source in $room',
+      'rooms'   => 'Amongst others i know $roomNames as rooms',
       'scenes'  => '$deviceNames in $room may be able to be set to $sceneNames'
     }
   },
@@ -1582,10 +1583,10 @@ sub disable_msgDialog {
     if ( defined $hash->{helper}->{SpeechDialog} 
         && defined $hash->{helper}->{SpeechDialog}->{config}
         && defined $hash->{helper}->{SpeechDialog}->{config}->{AMADCommBridge} ) {
-            $devsp = 'TYPE=AMADCommBridge';
+            $devsp = 'TYPE=(AMADCommBridge|AMADDevice)';
     }
     if ( $enable ) { 
-        $devsp = $devsp ? 'TYPE=(AMADCommBridge|ROOMMATE|GUEST)' : 'TYPE=(ROOMMATE|GUEST)';
+        $devsp = $devsp ? 'TYPE=(AMADCommBridge|AMADDevice|ROOMMATE|GUEST)' : 'TYPE=(ROOMMATE|GUEST)';
     }
     if ( $hash->{autoTraining} ) {
         $devsp .= ',global' if $devsp;
@@ -1602,6 +1603,37 @@ sub disable_msgDialog {
     delete $hash->{helper}{msgDialog} if !$enable;
     return;
 }
+
+#Make globally available to allow later use by other functions, esp.  handleIntentConfirmAction
+my $dispatchFns = {
+    Shortcuts           => \&handleIntentShortcuts, 
+    SetOnOff            => \&handleIntentSetOnOff,
+    SetOnOffGroup       => \&handleIntentSetOnOffGroup,
+    SetTimedOnOff       => \&handleIntentSetTimedOnOff,
+    SetTimedOnOffGroup  => \&handleIntentSetTimedOnOffGroup,
+    GetOnOff            => \&handleIntentGetOnOff,
+    SetNumeric          => \&handleIntentSetNumeric,
+    SetNumericGroup     => \&handleIntentSetNumericGroup,
+    GetNumeric          => \&handleIntentGetNumeric,
+    GetState            => \&handleIntentGetState,
+    MediaControls       => \&handleIntentMediaControls,
+    MediaChannels       => \&handleIntentMediaChannels,
+    SetColor            => \&handleIntentSetColor,
+    SetColorGroup       => \&handleIntentSetColorGroup,
+    SetScene            => \&handleIntentSetScene,
+    GetTime             => \&handleIntentGetTime,
+    GetDate             => \&handleIntentGetDate,
+    SetTimer            => \&handleIntentSetTimer,
+    GetTimer            => \&handleIntentGetTimer,
+    Timer               => \&handleIntentSetTimer,
+    ConfirmAction       => \&handleIntentConfirmAction,
+    CancelAction        => \&handleIntentCancelAction,
+    ChoiceRoom          => \&handleIntentChoiceRoom,
+    ChoiceDevice        => \&handleIntentChoiceDevice,
+    Choice              => \&handleIntentChoice,
+    MsgDialog           => \&handleIntentMsgDialog,
+    ReSpeak             => \&handleIntentReSpeak
+};
 
 
 sub perlExecute {
@@ -1944,7 +1976,7 @@ sub getRoomName {
 # Gerät über Raum und Namen suchen.
 sub getDeviceByName {
     my $hash = shift // return;
-    my $room = shift; 
+    my $room = shift;
     my $name = shift; #either of the two required
 
     return if !$room && !$name;
@@ -1953,7 +1985,7 @@ sub getDeviceByName {
 
     return if !defined $hash->{helper}{devicemap};
 
-    $device = $hash->{helper}{devicemap}{rhasspyRooms}{$room}{$name};
+    $device = $hash->{helper}{devicemap}{rhasspyRooms}{$room}{$name} if $room && defined $hash->{helper}{devicemap}{rhasspyRooms}->{$room};
 
     if ($device) {
         Log3($hash->{NAME}, 5, "Device selected (by hash, with room and name): $device");
@@ -1967,7 +1999,8 @@ sub getDeviceByName {
             return $device ;
         }
     }
-    Log3($hash->{NAME}, 1, "No device for >>$name<< found, especially not in room >>$room<< (also not outside)!");
+    $room = $room ? "especially not in room >>$room<< (also not outside)!" : 'room not provided!';
+    Log3($hash->{NAME}, 1, "No device for >>$name<< found, $room");
     return;
 }
 
@@ -2172,20 +2205,31 @@ sub getDeviceByMediaChannel {
 }
 
 sub getDevicesByGroup {
-    my $hash       = shift // return;
-    my $data       = shift // return;
+    my $hash    = shift // return;
+    my $data    = shift // return;
+    my $getVirt = shift;
 
-    my $group = $data->{Group} // return;
+    my $group = $data->{Group};
+    return if !$group && !$getVirt;
     my $room  = getRoomName($hash, $data);
 
     my $devices = {};
+    my @devs;
+    my $isVirt = defined $data->{'.virtualGroup'};
+    if ( $isVirt ) {
+        @devs = split m{,}, $data->{'.virtualGroup'};
+    } else {
+        @devs = keys %{$hash->{helper}{devicemap}{devices}};
+    }
 
-    for my $dev (keys %{$hash->{helper}{devicemap}{devices}}) {
-        my $allrooms = $hash->{helper}{devicemap}{devices}{$dev}->{rooms};
-        next if $room ne 'global' && $allrooms !~ m{\b$room(?:[\b:\s]|\Z)}i; ##no critic qw(RequireExtendedFormatting)
+    for my $dev (@devs) {
+        if ( !$isVirt ) {
+            my $allrooms = $hash->{helper}{devicemap}{devices}{$dev}->{rooms};
+            next $room ne 'global' && $allrooms !~ m{\b$room(?:[\b:\s]|\Z)}i; ##no critic qw(RequireExtendedFormatting)
 
-        my $allgroups = $hash->{helper}{devicemap}{devices}{$dev}->{groups} // next;
-        next if $allgroups !~ m{\b$group\b}i; ##no critic qw(RequireExtendedFormatting)
+            my $allgroups = $hash->{helper}{devicemap}{devices}{$dev}->{groups} // next;
+            next if $allgroups !~ m{\b$group\b}i; ##no critic qw(RequireExtendedFormatting)
+        }
 
         my $specials = $hash->{helper}{devicemap}{devices}{$dev}{group_specials};
         my $label = $specials->{partOf} // $dev;
@@ -2196,7 +2240,78 @@ sub getDevicesByGroup {
         $devices->{$label} = { delay => $delay, prio => $prio };
     }
 
+    return keys %{$devices} if $getVirt;
     return $devices;
+}
+
+sub getIsVirtualGroup {
+    my $hash    = shift // return;
+    my $data    = shift // return;
+    my $getVirt = shift;
+
+    my @devlist;
+    
+    my @rooms = grep { m{\ARoom}x } keys %{$data};
+    my @grps  = grep { m{\AGroup}x } keys %{$data};
+    my @devs  = grep { m{\ADevice}x } keys %{$data};
+
+    #do we not have more than one room or more than one device and/or group?
+    return if (!@rooms || @rooms == 1) && (@grps + @devs) < 2; 
+
+    my $restdata = {};
+    for ( keys %{$data} ) {
+        $restdata->{$_} = $data->{$_} if $_ !~ m{\A(?:Room|Group|Device|intent)}x;
+    }
+
+    my $intent = $data->{intent} // return;
+    $intent =~ s{Group\z}{};
+    my $grpIntent = $intent.'Group';
+    my $needsConfirmation;
+
+    $rooms[0] = 'noneInData' if !defined $rooms[0];
+
+    for my $room ( @rooms ) {
+        for my $dev ( @devs ) {
+        my $single = getDeviceByName($hash, $room eq 'noneInData' ? undef : $data->{$room}, $data->{$dev});
+            next if !$single;
+            push @devlist, $single;
+            $needsConfirmation //= getNeedsConfirmation($hash, $restdata, $intent, $data->{$dev}, 1);
+        }
+        for my $grp ( @grps ) {
+            my $checkdata = $restdata;
+            $checkdata->{Group}  = $data->{$grp};
+            $checkdata->{Room}   = $data->{$room} if $room ne 'noneInData' ;
+            @devlist = ( @devlist, getDevicesByGroup($hash, $checkdata, 1) );
+            $needsConfirmation //= getNeedsConfirmation($hash, $checkdata, $grpIntent, undef, 1);
+        }
+    }
+
+    return if !@devlist;
+    @devlist = uniq(@devlist);
+
+    if (!$needsConfirmation) {
+        my $checkdata = $restdata;
+        $checkdata->{Group}  = 'virtualGroup';
+        $needsConfirmation = getNeedsConfirmation($hash, $checkdata, $grpIntent, undef, 1);
+    }
+
+    $restdata->{intent}          = $grpIntent;
+    $restdata->{'.virtualGroup'} = join q{,}, @devlist;
+    
+    if ( $needsConfirmation ) {
+        my $response = getResponse($hash, 'DefaultConfirmationRequestRawInput');
+        $response =~ s{(\$\w+)}{$1}eegx;
+        Log3( $hash, 5, "[$hash->{NAME}] getNeedsConfirmation is true for virtual group, response is $response" );
+        setDialogTimeout($hash, $restdata, _getDialogueTimeout($hash), $response);
+        return $hash->{NAME};
+    }
+
+    if (ref $dispatchFns->{$grpIntent} eq 'CODE' ) {
+        $restdata->{Confirmation} = 1;
+        return $dispatchFns->{$grpIntent}->($hash, $restdata);
+    }
+
+    return;
 }
 
 sub getNeedsConfirmation {
@@ -2204,8 +2319,9 @@ sub getNeedsConfirmation {
     my $data   = shift // return;
     my $intent = shift // return;
     my $device = shift;
+    my $fromVG = shift;
 
-    return if defined $hash->{testline};
+    return if defined $hash->{testline} && !$fromVG;;
 
     my $re = defined $device ? $device : $data->{Group};
     return if !defined $re;
@@ -2221,6 +2337,7 @@ sub getNeedsConfirmation {
          && defined $hash->{helper}{tweaks}{confirmIntents} 
          && defined $hash->{helper}{tweaks}{confirmIntents}{$intent} 
          && $re =~ m{\A($hash->{helper}{tweaks}{confirmIntents}{$intent})\z}xms ) { 
+        return 1 if $fromVG;
         $response = defined $hash->{helper}{tweaks}{confirmIntentResponses} 
                     && defined $hash->{helper}{tweaks}{confirmIntentResponses}{$intent} ? $hash->{helper}{tweaks}{confirmIntentResponses}{$intent}
                     : getResponse($hash, 'DefaultConfirmationRequestRawInput');
@@ -2236,6 +2353,7 @@ sub getNeedsConfirmation {
     my $confirm = $hash->{helper}{devicemap}{devices}{$device}->{confirmIntents};
     return if !defined $confirm;
     if ( $confirm =~ m{\b$intent(?:[,]|\Z)}i ) { ##no critic qw(RequireExtendedFormatting)
+        return 1 if $fromVG;
         $response = defined $hash->{helper}{devicemap}{devices}{$device}->{confirmIntentResponses} 
                     && defined $hash->{helper}{devicemap}{devices}{$device}->{confirmIntentResponses}{$intent} 
                   ? $hash->{helper}{devicemap}{devices}{$device}->{confirmIntentResponses}{$intent}
@@ -2611,6 +2729,7 @@ sub Notify {
     Log3($name, 5, "[$name] NotifyFn called with event in $device");
 
     return notifySTT($hash, $dev_hash) if InternalVal($device,'TYPE', 'unknown') eq 'AMADCommBridge';
+    return notifyAMADDev($hash, $dev_hash) if InternalVal($device,'TYPE', 'unknown') eq 'AMADDevice';
 
     if ( $device eq 'global' ) {
         return if !$hash->{autoTraining};
@@ -2684,6 +2803,32 @@ sub notifySTT {
     return;
 }
 
+sub notifyAMADDev{
+    my $hash     = shift // return;
+    my $dev_hash = shift // return;
+    my $name = $hash->{NAME} // return;
+    my $device = $dev_hash->{NAME} // return;
+
+    my @events = @{deviceEvents($dev_hash, 1)};
+
+    return if !@events;
+
+    for my $event (@events){
+        next if $event !~ m{lastSetCommandState:.setCmd_done}xms;
+        return if $hash->{helper}->{SpeechDialog}->{config}->{allowed} !~ m{\b(?:$device|everyone)(?:\b|\z)}xms;
+
+        Log3($name, 4 , qq($name: $device may have finished voice output));
+
+        my $iscont = SpeechDialog_sayFinish($hash, $device);
+        if ( $iscont && ReadingsVal($device, 'rhasspy_dialogue', 'closed') eq 'open' ) {
+            AnalyzeCommand( $hash, "set $device activateVoiceInput" );
+            readingsSingleUpdate($defs{$device}, 'rhasspy_dialogue', 'listening', 1);
+        }
+    }
+
+    return;
+}
+
 sub activateVoiceInput {
     my $hash    = shift //return;
     my $anon    = shift;
@@ -2726,38 +2871,6 @@ sub sayFinished {
     my $json = _toCleanJSON($sendData);
     return IOWrite($hash, 'publish', qq{hermes/tts/sayFinished $json});
 }
-
-
-#Make globally available to allow later use by other functions, esp.  handleIntentConfirmAction
-my $dispatchFns = {
-    Shortcuts           => \&handleIntentShortcuts, 
-    SetOnOff            => \&handleIntentSetOnOff,
-    SetOnOffGroup       => \&handleIntentSetOnOffGroup,
-    SetTimedOnOff       => \&handleIntentSetTimedOnOff,
-    SetTimedOnOffGroup  => \&handleIntentSetTimedOnOffGroup,
-    GetOnOff            => \&handleIntentGetOnOff,
-    SetNumeric          => \&handleIntentSetNumeric,
-    SetNumericGroup     => \&handleIntentSetNumericGroup,
-    GetNumeric          => \&handleIntentGetNumeric,
-    GetState            => \&handleIntentGetState,
-    MediaControls       => \&handleIntentMediaControls,
-    MediaChannels       => \&handleIntentMediaChannels,
-    SetColor            => \&handleIntentSetColor,
-    SetColorGroup       => \&handleIntentSetColorGroup,
-    SetScene            => \&handleIntentSetScene,
-    GetTime             => \&handleIntentGetTime,
-    GetDate             => \&handleIntentGetDate,
-    SetTimer            => \&handleIntentSetTimer,
-    GetTimer            => \&handleIntentGetTimer,
-    Timer               => \&handleIntentSetTimer,
-    ConfirmAction       => \&handleIntentConfirmAction,
-    CancelAction        => \&handleIntentCancelAction,
-    ChoiceRoom          => \&handleIntentChoiceRoom,
-    ChoiceDevice        => \&handleIntentChoiceDevice,
-    Choice              => \&handleIntentChoice,
-    MsgDialog           => \&handleIntentMsgDialog,
-    ReSpeak             => \&handleIntentReSpeak
-};
 
 
 #reference: https://forum.fhem.de/index.php/topic,124952.msg1213902.html#msg1213902
@@ -2990,20 +3103,29 @@ sub msgDialog_progress {
 }
 
 sub msgDialog_respond {
-    my $hash       = shift // return;
-    my $recipients = shift // return;
-    my $message    = shift // return;
-    my $keepopen   = shift // 1;
+    my $hash        = shift // return;
+    my $recipients  = shift // return;
+    my $message     = shift // return;
+    my $keepopen    = shift // 1;
+    my $cntByDelay  = shift // 0;
 
     Log3($hash, 5, "msgDialog_respond called with $recipients and text $message");
     trim($message);
-    return if !$message; # empty?
+    $message .= ' ' . getResponse( $hash, 'ContinueSession' ) if $cntByDelay;
+    if ( !$message ) { # empty?
+        delete $hash->{helper}{msgDialog}->{$recipients};
+        return $recipients;
+    }
 
     my $msgCommand = $hash->{helper}->{msgDialog}->{config}->{msgCommand};
     $msgCommand =~ s{\\[\@]}{@}x;
     $msgCommand =~ s{(\$\w+)}{$1}eegx;
     AnalyzeCommand($hash, $msgCommand);
-    resetRegIntTimer( $recipients, time + $hash->{helper}->{msgDialog}->{config}->{sessionTimeout}, \&RHASSPY_msgDialogTimeout, $hash, 0) if $keepopen;
+    if ( $keepopen ) {
+        resetRegIntTimer( $recipients, time + $hash->{helper}->{msgDialog}->{config}->{sessionTimeout}, \&RHASSPY_msgDialogTimeout, $hash, 0);
+    } else {
+        msgDialog_close($hash, $recipients);
+    }
     return $recipients;
 }
 
@@ -3036,7 +3158,7 @@ sub handleTtsMsgDialog {
     } elsif ( defined $hash->{helper}->{SpeechDialog} 
         && defined $hash->{helper}->{SpeechDialog}->{config}->{$recipient} ) {
         SpeechDialog_respond($hash,$recipient,$message,0);
-        sayFinished($hash, $data->{id}, $hash->{siteId}); #Beta-User: may be moved to response logic later with timeout...?
+        #sayFinished($hash, $data->{id}, $hash->{siteId}); #Beta-User: may be moved to response logic later with timeout...?
     }
 
     return $recipient;
@@ -3064,10 +3186,24 @@ sub setSpeechDialogTimeout {
     return;
 }
 
+sub SpeechDialog_sayFinish{
+    my $hash     = shift // return;
+    my $device   = shift // return;
+
+    return if !defined $hash->{helper}{SpeechDialog}->{$device} 
+           || !defined $hash->{helper}{SpeechDialog}->{$device}->{data} 
+           || !defined $hash->{helper}{SpeechDialog}->{$device}->{data}->{id};
+    sayFinished($hash, $hash->{helper}{SpeechDialog}->{$device}->{data}->{id}, $hash->{siteId});
+    return 1;
+}
+
+
 sub SpeechDialog_close {
     my $hash     = shift // return;
     my $device   = shift // return;
     Log3($hash, 5, "SpeechDialog_close called with $device");
+
+    SpeechDialog_sayFinish($hash, $device);
 
     deleteSingleRegIntTimer($device, $hash);
     readingsSingleUpdate($defs{$device}, 'rhasspy_dialogue', 'closed', 1);
@@ -3129,6 +3265,7 @@ sub SpeechDialog_respond {
     my $device     = shift // return;
     my $message    = shift // return;
     my $keepopen   = shift // 1;
+    my $cntByDelay = shift // 0;
 
     Log3($hash, 5, "SpeechDialog_respond called with $device and text $message");
     trim($message);
@@ -3255,6 +3392,7 @@ sub analyzeMQTTmessage {
             $device //= $hash->{helper}->{SpeechDialog}->{config}->{wakeword}->{$hotword} if defined $hash->{helper}->{SpeechDialog} && defined $hash->{helper}->{SpeechDialog}->{config} && defined $hash->{helper}->{SpeechDialog}->{config}->{wakeword};
             if ($device) {
                 AnalyzeCommand( $hash, "set $device activateVoiceInput" );
+                readingsSingleUpdate($defs{$device}, 'rhasspy_dialogue', 'listening', 1);
                 push @updatedList, $device;
             }
         }
@@ -3328,7 +3466,10 @@ sub respond {
     my $data     = shift // return;
     my $response = shift // getResponse( $hash, 'NoValidResponse' );
     my $topic    = shift // q{endSession};
-    my $delay    = shift // ReadingsNum($hash->{NAME}, "sessionTimeout_$data->{siteId}", $hash->{sessionTimeout});
+    my $delay    = shift;
+
+    my $contByDelay = $delay // $topic ne 'endSession';
+    $delay //= ReadingsNum($hash->{NAME}, "sessionTimeout_$data->{siteId}", $hash->{sessionTimeout});
 
     if ( defined $hash->{testline} ) {
         $response = $response->{text} if ref $response eq 'HASH';
@@ -3380,12 +3521,12 @@ sub respond {
     if ( defined $hash->{helper}->{msgDialog} 
       && defined $hash->{helper}->{msgDialog}->{$identity} ){
         Log3($hash, 5, "respond deviated to msgDialog_respond for $identity.");
-        return msgDialog_respond($hash, $identity, $response);
+        return msgDialog_respond($hash, $identity, $response, $topic eq 'continueSession', $contByDelay);
     } elsif (defined $hash->{helper}->{SpeechDialog} 
         && defined $hash->{helper}->{SpeechDialog}->{config}->{$identity} ) {
         Log3($hash, 5, "respond deviated to SpeechDialog_respond for $identity.");
         #$hash->{helper}->{SpeechDialog}->{$identity}->{data} = $data if $topic eq 'continueSession';
-        return SpeechDialog_respond($hash,$identity,$response,$topic eq 'continueSession');
+        return SpeechDialog_respond($hash,$identity,$response,$topic eq 'continueSession', $contByDelay);
     }
 
     IOWrite($hash, 'publish', qq{hermes/dialogueManager/$topic $json});
@@ -3996,6 +4137,9 @@ sub handleIntentSetOnOff {
 
     # Device AND Value must exist
     return respond( $hash, $data, getResponse($hash, 'NoValidData') ) if !defined $data->{Device} || !defined $data->{Value};
+
+    my $redirects = getIsVirtualGroup($hash,$data);
+    return $redirects if $redirects;
 
     my $room = getRoomName($hash, $data);
     my $device = getDeviceByName($hash, $room, $data->{Device}) // return respond( $hash, $data, getResponse($hash, 'NoDeviceFound') );
