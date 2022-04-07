@@ -1978,9 +1978,11 @@ sub getRoomName {
 
 # Gerät über Raum und Namen suchen.
 sub getDeviceByName {
-    my $hash = shift // return;
-    my $room = shift;
-    my $name = shift; #either of the two required
+    my $hash  = shift // return;
+    my $room  = shift;
+    my $name  = shift; #either of the two required
+    my $droom = shift; #oiginally included in $data?
+    my $type  = shift; #for priority outside room
 
     return if !$room && !$name;
 
@@ -1992,15 +1994,30 @@ sub getDeviceByName {
 
     if ($device) {
         Log3($hash->{NAME}, 5, "Device selected (by hash, with room and name): $device");
-        return $device ;
+        return $device;
     }
-    for (keys %{$hash->{helper}{devicemap}{rhasspyRooms}}) {
-        $device = $hash->{helper}{devicemap}{rhasspyRooms}{$_}{$name};
+
+    return if $droom; #no further check if explicit room was requested!
+
+    my @maybees;
+    for (sort keys %{$hash->{helper}{devicemap}{rhasspyRooms}}) {
+        my $dev = $hash->{helper}{devicemap}{rhasspyRooms}{$_}{$name};
         #return $device if $device;
-        if ($device) {
-            Log3($hash->{NAME}, 5, "Device selected (by hash, using only name): $device");
-            return $device ;
+        if ($dev) {
+            Log3($hash->{NAME}, 5, "Device selected (by hash, using only name): $dev");
+            return $dev 
+                if $type
+                  && defined $hash->{helper}{devicemap}{devices}{$dev}->{prio} 
+                  && defined $hash->{helper}{devicemap}{devices}{$dev}{prio}->{outsideRoom}
+                  && $hash->{helper}{devicemap}{devices}{$dev}{prio}->{outsideRoom} =~ m{\b$type\b}xms;
+            push @maybees, $dev;
         }
+    }
+    @maybees = uniq(@maybees);
+    return $maybees[0] if @maybees == 1; # exactly one device matching name
+    if (@maybees) {
+        Log3($hash->{NAME}, 3, "[$hash->{NAME}] Too many matches for >>$name<< found (provide room info may help)");
+        return;
     }
     $room = $room ? "especially not in room >>$room<< (also not outside)!" : 'room not provided!';
     Log3($hash->{NAME}, 1, "No device for >>$name<< found, $room");
@@ -2252,8 +2269,10 @@ sub getIsVirtualGroup {
     my $data    = shift // return;
     my $getVirt = shift;
 
+    return if defined $data->{'.virtualGroup'};
+
     my @devlist;
-    
+
     my @rooms = grep { m{\ARoom}x } keys %{$data};
     my @grps  = grep { m{\AGroup}x } keys %{$data};
     my @devs  = grep { m{\ADevice}x } keys %{$data};
@@ -2275,7 +2294,7 @@ sub getIsVirtualGroup {
 
     for my $room ( @rooms ) {
         for my $dev ( @devs ) {
-        my $single = getDeviceByName($hash, $room eq 'noneInData' ? getRoomName($hash, $data) : $data->{$room}, $data->{$dev});
+        my $single = getDeviceByName($hash, $room eq 'noneInData' ? getRoomName($hash, $data) : $data->{$room}, $data->{$dev}, $data->{$room}, $intent);
             next if !$single;
             push @devlist, $single;
             $needsConfirmation //= getNeedsConfirmation($hash, $restdata, $intent, $data->{$dev}, 1);
@@ -2612,7 +2631,6 @@ sub _getValue {
     }
 
     # If it's only a string without quotes, return string for TTS
-    #return ReadingsVal($device, $getString, $getString);
     return ReadingsVal($device, $getString, $getString);
 }
 
@@ -3009,7 +3027,11 @@ sub _isUnexpectedInTestMode {
     my $data   = shift // return;
     
     return if !defined $hash->{testline};
-    $hash->{helper}->{test}->{result}->[$hash->{testline}] .= " => Unexpected call of $data->{intent} routine!";
+    if ( defined $data->{'.virtualGroup'} ) {
+        $hash->{helper}->{test}->{result}->[$hash->{testline}] .= " => redirected group intent ($data->{intent}), adressed devices: $data->{'.virtualGroup'}";
+    } else {
+        $hash->{helper}->{test}->{result}->[$hash->{testline}] .= " => Unexpected call of $data->{intent} routine!";
+    }
     $hash->{testline}++;
     return 1;
 }
@@ -4003,7 +4025,7 @@ sub handleCustomIntent {
 
     if ( exists $data->{Device} ) {
       $room = getRoomName($hash, $data);
-      $data->{Device} = getDeviceByName($hash, $room, $data->{Device}); #Beta-User: really...?
+      $data->{Device} = getDeviceByName($hash, $room, $data->{Device}, $data->{Room}); #replace rhasspyName by FHEM device name
     }
 
     my $subName = $custom->{function};
@@ -4137,7 +4159,7 @@ sub handleIntentSetOnOff {
     return $redirects if $redirects;
 
     my $room = getRoomName($hash, $data);
-    my $device = getDeviceByName($hash, $room, $data->{Device}) // return respond( $hash, $data, getResponse($hash, 'NoDeviceFound') );
+    my $device = getDeviceByName($hash, $room, $data->{Device}, $data->{Room}, 'SetOnOff') // return respond( $hash, $data, getResponse($hash, 'NoDeviceFound') );
     my $mapping = getMapping($hash, $device, 'SetOnOff') // return respond( $hash, $data, getResponse($hash, 'NoMappingFound') );
     my $value = $data->{Value};
 
@@ -4174,7 +4196,10 @@ sub handleIntentSetOnOffGroup {
 
     Log3($hash->{NAME}, 5, "handleIntentSetOnOffGroup called");
 
-    return respond( $hash, $data, getResponse($hash, 'NoValidData') ) if !defined $data->{Value}; 
+    return respond( $hash, $data, getResponse($hash, 'NoValidData') ) if !defined $data->{Value};
+
+    my $redirects = getIsVirtualGroup($hash,$data);
+    return $redirects if $redirects;
 
     #check if confirmation is required
     return $hash->{NAME} if !$data->{Confirmation} && getNeedsConfirmation( $hash, $data, 'SetOnOffGroup' );
@@ -4242,8 +4267,11 @@ sub handleIntentSetTimedOnOff {
     # Device AND Value must exist
     return respond( $hash, $data, getResponse($hash, 'NoValidData') ) if !defined $data->{Device} || !defined $data->{Value};
 
+    my $redirects = getIsVirtualGroup($hash,$data);
+    return $redirects if $redirects;
+
     my $room = getRoomName($hash, $data);
-    my $device = getDeviceByName($hash, $room, $data->{Device}) // return respond( $hash, $data, getResponse($hash, 'NoDeviceFound') );
+    my $device = getDeviceByName($hash, $room, $data->{Device}, $data->{Room}, 'SetOnOff') // return respond( $hash, $data, getResponse($hash, 'NoDeviceFound') );
     my $mapping = getMapping($hash, $device, 'SetOnOff') // return respond( $hash, $data, getResponse($hash, 'NoMappingFound') );
     my $value = $data->{Value};
 
@@ -4257,25 +4285,9 @@ sub handleIntentSetTimedOnOff {
     my $allset = getAllSets($device);
     return respond( $hash, $data, getResponse($hash, 'NoTimedOnDeviceFound') ) if $allset !~ m{\b$cmd(?:[\b:\s]|\Z)}xms;
 
-    my $hour = 0;
-    my $now1 = time;
-    my $now = $now1;
-    my @time = localtime($now);
-    if ( defined $data->{Hourabs} ) {
-        $hour  = $data->{Hourabs};
-        $now1 = $now1 - ($time[2] * HOURSECONDS) - ($time[1] * MINUTESECONDS) - $time[0]; #last midnight
-    }
-    elsif ($data->{Hour}) {
-        $hour = $data->{Hour};
-    }
-    $now1 += HOURSECONDS * $hour;
-    $now1 += MINUTESECONDS * $data->{Min} if $data->{Min};
-    $now1 += $data->{Sec} if $data->{Sec};
+    my (undef , undef, $secsfromnow) = _getSecondsfromData($data);
 
-    $now1 += +DAYSECONDS if $now1 < $now;
-    $now1 = $now1 - $now;
-
-    $cmd .= " $now1";
+    $cmd .= " $secsfromnow";
     # execute Cmd
     analyzeAndRunCmd($hash, $device, $cmd);
     Log3($hash->{NAME}, 5, "Running command [$cmd] on device [$device]" );
@@ -4305,6 +4317,9 @@ sub handleIntentSetTimedOnOffGroup {
     return respond( $hash, $data, getResponse( $hash, 'duration_not_understood' ) ) 
     if !defined $data->{Hourabs} && !defined $data->{Hour} && !defined $data->{Min} && !defined $data->{Sec};
 
+    my $redirects = getIsVirtualGroup($hash,$data);
+    return $redirects if $redirects;
+
     #check if confirmation is required
     return $hash->{NAME} if !$data->{Confirmation} && getNeedsConfirmation( $hash, $data, 'SetTimedOnOffGroup' );
 
@@ -4322,22 +4337,7 @@ sub handleIntentSetTimedOnOffGroup {
     return respond( $hash, $data, getResponse($hash, 'NoDeviceFound') ) if !keys %{$devices}; 
 
     #calculate duration for on/off-timer
-    my $hour = 0;
-    my $now1 = time;
-    my $now = $now1;
-    my @time = localtime($now);
-    if ( defined $data->{Hourabs} ) {
-        $hour  = $data->{Hourabs};
-        $now1 = $now1 - ($time[2] * HOURSECONDS) - ($time[1] * MINUTESECONDS) - $time[0]; #last midnight
-    }
-    elsif ($data->{Hour}) {
-        $hour = $data->{Hour};
-    }
-    $now1 += HOURSECONDS * $hour;
-    $now1 += MINUTESECONDS * $data->{Min} if $data->{Min};
-    $now1 += $data->{Sec} if $data->{Sec};
-    $now1 += +DAYSECONDS if $now1 < $now;
-    $now1 = $now1 - $now;
+    my (undef , undef, $secsfromnow) = _getSecondsfromData($data);
 
     my $delaysum = 0;
 
@@ -4363,7 +4363,7 @@ sub handleIntentSetTimedOnOffGroup {
             Log3($hash->{NAME}, 3, "Running command [$cmd] on device [$device] is not possible!");
             next;
         }
-        $cmd .= " $now1";
+        $cmd .= " $secsfromnow";
 
         # execute Cmd
         if ( !$delaysum ) {
@@ -4399,7 +4399,7 @@ sub handleIntentGetOnOff {
     my $response;
 
     my $room = getRoomName($hash, $data);
-    my $device = getDeviceByName($hash, $room, $data->{Device}) // return respond( $hash, $data, getResponse($hash, 'NoDeviceFound') );
+    my $device = getDeviceByName($hash, $room, $data->{Device}, $data->{Room}, 'GetOnOff') // return respond( $hash, $data, getResponse($hash, 'NoDeviceFound') );
 
     my $deviceName = $data->{Device};
     my $mapping = getMapping($hash, $device, 'GetOnOff') // return respond( $hash, $data, getResponse($hash, 'NoMappingFound') );
@@ -4441,6 +4441,9 @@ sub handleIntentSetNumericGroup {
     Log3($hash->{NAME}, 5, 'handleIntentSetNumericGroup called');
 
     return respond( $hash, $data, getResponse($hash, 'NoValidData') ) if !exists $data->{Value} && !exists $data->{Change};
+
+    my $redirects = getIsVirtualGroup($hash,$data);
+    return $redirects if $redirects;
 
     #check if confirmation is required
     return $hash->{NAME} if !$data->{Confirmation} && getNeedsConfirmation( $hash, $data, 'SetNumericGroup' );
@@ -4507,6 +4510,9 @@ sub handleIntentSetNumeric {
         return respond( $hash, $data, getResponse( $hash, 'NoValidData' ) );
     }
 
+    my $redirects = getIsVirtualGroup($hash,$data);
+    return $redirects if $redirects;
+
     my $unit   = $data->{Unit};
     my $change = $data->{Change};
     my $type   = $data->{Type};
@@ -4522,7 +4528,7 @@ sub handleIntentSetNumeric {
 
     # Gerät über Name suchen, oder falls über Lautstärke ohne Device getriggert wurde das ActiveMediaDevice suchen
     if ( !defined $device && exists $data->{Device} ) {
-        $device = getDeviceByName($hash, $room, $data->{Device});
+        $device = getDeviceByName($hash, $room, $data->{Device}, $data->{Room}, $subType);
     } elsif ( defined $type && $type eq 'volume' ) {
         $device = 
             getActiveDeviceForIntentAndType($hash, $room, 'SetNumeric', $type) 
@@ -4691,7 +4697,7 @@ sub handleIntentGetNumeric {
 
     # Get suitable device
     my $device = exists $data->{Device}
-        ? getDeviceByName($hash, $room, $data->{Device})
+        ? getDeviceByName($hash, $room, $data->{Device}, $data->{Room}, 'SetOnOff')
         : getDeviceByIntentAndType($hash, $room, 'GetNumeric', $type)
         // return respond( $hash, $data, getResponse( $hash, 'NoDeviceFound' ) );
 
@@ -4833,7 +4839,7 @@ sub handleIntentGetState {
     my $deviceName = $device;
     my $intent = 'GetState';
 
-    $device = getDeviceByName($hash, $room, $device) // return respond( $hash, $data, getResponse($hash, 'NoDeviceFound') );
+    $device = getDeviceByName($hash, $room, $device, $data->{Room}) // return respond( $hash, $data, getResponse($hash, 'NoDeviceFound') );
 
     if ( defined $type && $type eq 'scenes' ) {
         $response = getResponse( $hash, 'getRHASSPYOptions', $type );
@@ -4891,7 +4897,7 @@ sub handleIntentMediaControls {
 
     # Search for matching device
     if (exists $data->{Device}) {
-        $device = getDeviceByName($hash, $room, $data->{Device});
+        $device = getDeviceByName($hash, $room, $data->{Device}, $data->{Room}, 'MediaControls');
     } else {
         $device = getActiveDeviceForIntentAndType($hash, $room, 'MediaControls', undef) 
         // return respond( $hash, $data, getResponse($hash, 'NoActiveMediaDevice') );
@@ -4930,7 +4936,7 @@ sub handleIntentSetScene{
 
     my $room = getRoomName($hash, $data);
     my $scene = $data->{Scene};
-    my $device = getDeviceByName($hash, $room, $data->{Device});
+    my $device = getDeviceByName($hash, $room, $data->{Device}, $data->{Room}, 'SetScene');
     my $mapping = getMapping($hash, $device, 'SetScene');
 
     #Welche (Szenen | Szenarien | Einstellungen){Get:scenes} (kennt|kann) [(der | die | das)] $de.fhem.Device-scene{Device}
@@ -5025,7 +5031,7 @@ sub handleIntentMediaChannels {
 
     # Passendes Gerät suchen
     my $device = exists $data->{Device}
-        ? getDeviceByName($hash, $room, $data->{Device})
+        ? getDeviceByName($hash, $room, $data->{Device}, $data->{Room}, 'MediaChannels')
         : getDeviceByMediaChannel($hash, $room, $channel);
     return respond( $hash, $data, getResponse($hash, 'NoMediaChannelFound') ) if !defined $device;
 
@@ -5059,12 +5065,14 @@ sub handleIntentSetColor {
         return respond( $hash, $data, getResponse( $hash, 'NoValidData' ) );
     }
 
-    #if (exists $data->{Color} && exists $data->{Device}) {
+    my $redirects = getIsVirtualGroup($hash,$data);
+    return $redirects if $redirects;
+
     my $room = getRoomName($hash, $data);
     my $color = $data->{Color} // q{};
 
     # Search for matching device and command
-    $device = getDeviceByName($hash, $room, $data->{Device}) if !defined $device;
+    $device = getDeviceByName($hash, $room, $data->{Device}, $data->{Room}, 'SetColor') if !defined $device;
     my $cmd = getKeyValFromAttr($hash, $device, 'rhasspyColors', $color, undef);
     my $cmd2;
     if (defined $hash->{helper}{devicemap}{devices}{$device}{color_specials}
@@ -5236,6 +5244,9 @@ sub handleIntentSetColorGroup {
 
     return respond( $hash, $data, getResponse( $hash, 'NoValidData' ) ) if !exists $data->{Color} && !exists $data->{Rgb} &&!exists $data->{Saturation} && !exists $data->{Colortemp} && !exists $data->{Hue};
 
+    my $redirects = getIsVirtualGroup($hash,$data);
+    return $redirects if $redirects;
+
     #check if confirmation is required
     return $hash->{NAME} if !$data->{Confirmation} && getNeedsConfirmation( $hash, $data, 'SetColorGroup' );
 
@@ -5295,30 +5306,12 @@ sub handleIntentTimer {
     Log3($name, 5, 'handleIntentSetTimer called');
 
     return respond( $hash, $data, getResponse( $hash, 'duration_not_understood' ) ) 
-    if !defined $data->{Hourabs} && !defined $data->{Hour} && !defined $data->{Min} && !defined $data->{Sec} && !defined $data->{CancelTimer} && !defined $data->{GetTimer};;
+    if !defined $data->{Hourabs} && !defined $data->{Hour} && !defined $data->{Min} && !defined $data->{Sec} && !defined $data->{CancelTimer} && !defined $data->{GetTimer};
 
     my $room = getRoomName($hash, $data);
 
-    my $hour = 0;
-    my $value = time;
-    my $now = $value;
-    my @time = localtime($now);
-    if ( defined $data->{Hourabs} ) {
-        $hour  = $data->{Hourabs};
-        $value = $value - ($time[2] * HOURSECONDS) - ($time[1] * MINUTESECONDS) - $time[0]; #last midnight
-    }
-    elsif ($data->{Hour}) {
-        $hour = $data->{Hour};
-    }
-    $value += HOURSECONDS * $hour;
-    $value += MINUTESECONDS * $data->{Min} if $data->{Min};
-    $value += $data->{Sec} if $data->{Sec};
-
-    my $tomorrow = 0;
-    if ( $value < $now ) {
-        $tomorrow = 1;
-        $value += +DAYSECONDS;
-    }
+    my ($calc_secs , $tomorrow, $seconds);
+    ($calc_secs , $tomorrow, $seconds) = _getSecondsfromData($data) if !defined $data->{CancelTimer} && !defined $data->{GetTimer};
 
     my $siteIds = ReadingsVal( $name, 'siteIds',0);
     fetchSiteIds($hash) if !$siteIds;
@@ -5350,13 +5343,12 @@ sub handleIntentTimer {
     }
 
     if (defined $data->{GetTimer}) {
-        $value = InternalVal($roomReading, 'TRIGGERTIME', undef) // return respond( $hash, $data, getResponse( $hash, 'timerSet', 6 ) );
+        $calc_secs = InternalVal($roomReading, 'TRIGGERTIME', undef) // return respond( $hash, $data, getResponse( $hash, 'timerSet', 6 ) );
     }
 
-    if ( $value && $timerRoom ) {
-        my $seconds = $value - $now;
+    if ( $calc_secs && $timerRoom ) {
         if ( !defined $data->{GetTimer} && !defined $hash->{testline}) {
-            my $diff = $seconds;
+            my $diff = $seconds // 0;
             my $attime = strftime( '%H', gmtime $diff );
             $attime += 24 if $tomorrow;
             $attime .= strftime( ':%M:%S', gmtime $diff );
@@ -5386,7 +5378,7 @@ sub handleIntentTimer {
 
         my ($range, $minutes, $hours, $minutetext);
         my @timerlimits = $hash->{helper}->{tweaks}->{timerLimits} // (91, 9*MINUTESECONDS, HOURSECONDS, 1.5*HOURSECONDS, HOURSECONDS );
-        @time = localtime($value);
+        my @time = localtime($calc_secs);
         if ( $seconds < $timerlimits[0] && ( !defined $data->{Hourabs} || defined $data->{Hourabs} && $seconds < $timerlimits[4] ) ) { 
             $range = 0;
         } elsif (  $seconds < $timerlimits[2] && ( !defined $data->{Hourabs} || defined $data->{Hourabs} && $seconds < $timerlimits[4] ) ) {
@@ -5726,6 +5718,34 @@ sub _ReplaceReadingsVal {
     $to_analyze =~s{(\[([ari]:)?([a-zA-Z\d._]+):([a-zA-Z\d._\/-]+)(:(t|sec|i|d|r|r\d))?\])}{$readingsVal->($1,$2,$3,$4,$5)}egx;
     return $to_analyze;
 }
+
+sub _getSecondsfromData {
+    my $data = shift // return;
+    my $hour = 0;
+    my $calc_secs = time;
+    my $now = $calc_secs;
+    my @time = localtime($now);
+    if ( defined $data->{Hourabs} ) {
+        $hour  = $data->{Hourabs};
+        $calc_secs = $calc_secs - ($time[2] * HOURSECONDS) - ($time[1] * MINUTESECONDS) - $time[0]; #last midnight
+    }
+    elsif ($data->{Hour}) {
+        $hour = $data->{Hour};
+    }
+    $calc_secs += HOURSECONDS * $hour;
+    $calc_secs += MINUTESECONDS * $data->{Min} if $data->{Min};
+    $calc_secs += $data->{Sec} if $data->{Sec};
+
+    my $tomorrow = 0;
+    if ( $calc_secs < $now ) {
+        $tomorrow = 1;
+        $calc_secs += +DAYSECONDS if $calc_secs < $now;
+    }
+    my $secsfromnow= $calc_secs - $now;
+
+    return ($calc_secs , $tomorrow, $secsfromnow);
+}
+
 
 sub _getDataFile {
     my $hash     = shift // return;
