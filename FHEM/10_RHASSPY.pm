@@ -1,4 +1,4 @@
-# $Id: 10_RHASSPY.pm 25925 2022-04-06 Beta-User $
+# $Id: 10_RHASSPY.pm 25925 2022-04-07 Beta-User $
 ###########################################################################
 #
 # FHEM RHASSPY module (https://github.com/rhasspy)
@@ -109,6 +109,9 @@ my $languagevars = {
     'RequestChoiceGeneric' => 'There are several options, choose between $options.',
     'DefaultChoiceNoOutstanding' => "No choice expected!",
     'NoMinConfidence' => 'Minimum confidence not given, level is $confidence',
+    'XtendAnswers' => {
+        'unknownDevs' => '$uknDevs could not be identified.'
+    },
     'timerSet'   => {
         '0' => '$label in room $room has been set to $seconds seconds',
         '1' => '$label in room $room has been set to $minutes minutes $seconds',
@@ -2224,8 +2227,8 @@ sub getDevicesByGroup {
 
     for my $dev (@devs) {
         if ( !$isVirt ) {
-            my $allrooms = $hash->{helper}{devicemap}{devices}{$dev}->{rooms};
-            next $room ne 'global' && $allrooms !~ m{\b$room(?:[\b:\s]|\Z)}i; ##no critic qw(RequireExtendedFormatting)
+            my $allrooms = $hash->{helper}{devicemap}{devices}{$dev}->{rooms} // '';
+            next if $room ne 'global' && $allrooms !~ m{\b$room(?:[\b:\s]|\Z)}i; ##no critic qw(RequireExtendedFormatting)
 
             my $allgroups = $hash->{helper}{devicemap}{devices}{$dev}->{groups} // next;
             next if $allgroups !~ m{\b$group\b}i; ##no critic qw(RequireExtendedFormatting)
@@ -2272,7 +2275,7 @@ sub getIsVirtualGroup {
 
     for my $room ( @rooms ) {
         for my $dev ( @devs ) {
-        my $single = getDeviceByName($hash, $room eq 'noneInData' ? undef : $data->{$room}, $data->{$dev});
+        my $single = getDeviceByName($hash, $room eq 'noneInData' ? getRoomName($hash, $data) : $data->{$room}, $data->{$dev});
             next if !$single;
             push @devlist, $single;
             $needsConfirmation //= getNeedsConfirmation($hash, $restdata, $intent, $data->{$dev}, 1);
@@ -3103,29 +3106,21 @@ sub msgDialog_progress {
 }
 
 sub msgDialog_respond {
-    my $hash        = shift // return;
-    my $recipients  = shift // return;
-    my $message     = shift // return;
-    my $keepopen    = shift // 1;
-    my $cntByDelay  = shift // 0;
+    my $hash       = shift // return;
+    my $recipients = shift // return;
+    my $message    = shift // return;
+    my $keepopen   = shift // 1;
 
     Log3($hash, 5, "msgDialog_respond called with $recipients and text $message");
     trim($message);
-    $message .= ' ' . getResponse( $hash, 'ContinueSession' ) if $cntByDelay;
-    if ( !$message ) { # empty?
-        delete $hash->{helper}{msgDialog}->{$recipients};
-        return $recipients;
-    }
+    return if !$message; # empty?
 
     my $msgCommand = $hash->{helper}->{msgDialog}->{config}->{msgCommand};
     $msgCommand =~ s{\\[\@]}{@}x;
     $msgCommand =~ s{(\$\w+)}{$1}eegx;
     AnalyzeCommand($hash, $msgCommand);
-    if ( $keepopen ) {
-        resetRegIntTimer( $recipients, time + $hash->{helper}->{msgDialog}->{config}->{sessionTimeout}, \&RHASSPY_msgDialogTimeout, $hash, 0);
-    } else {
-        msgDialog_close($hash, $recipients);
-    }
+
+    resetRegIntTimer( $recipients, time + $hash->{helper}->{msgDialog}->{config}->{sessionTimeout}, \&RHASSPY_msgDialogTimeout, $hash, 0) if $keepopen;
     return $recipients;
 }
 
@@ -3521,7 +3516,7 @@ sub respond {
     if ( defined $hash->{helper}->{msgDialog} 
       && defined $hash->{helper}->{msgDialog}->{$identity} ){
         Log3($hash, 5, "respond deviated to msgDialog_respond for $identity.");
-        return msgDialog_respond($hash, $identity, $response, $topic eq 'continueSession', $contByDelay);
+        return msgDialog_respond($hash, $identity, $response, $topic eq 'continueSession');
     } elsif (defined $hash->{helper}->{SpeechDialog} 
         && defined $hash->{helper}->{SpeechDialog}->{config}->{$identity} ) {
         Log3($hash, 5, "respond deviated to SpeechDialog_respond for $identity.");
