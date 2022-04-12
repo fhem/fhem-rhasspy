@@ -1,4 +1,4 @@
-# $Id: 10_RHASSPY.pm 25925 2022-04-09 Beta-User $
+# $Id: 10_RHASSPY.pm 25948 2022-04-12 05:30:56Z Beta-User $
 ###########################################################################
 #
 # FHEM RHASSPY module (https://github.com/rhasspy)
@@ -1384,7 +1384,7 @@ sub _clean_ignored_keywords {
     return lc $toclean if !defined $hash->{helper}->{tweaks}
                         ||!defined $hash->{helper}->{tweaks}->{ignoreKeywords}
                         ||!defined $hash->{helper}->{tweaks}->{ignoreKeywords}->{$keyword};
-    $toclean =~ s{\A$hash->{helper}->{tweaks}->{ignoreKeywords}->{$keyword}\z}{}gi;
+    $toclean =~ s{\A$hash->{helper}->{tweaks}->{ignoreKeywords}->{$keyword}\z}{}gxi;
     return lc $toclean;
 }
 
@@ -2243,7 +2243,7 @@ sub getDevicesByGroup {
     my @devs;
     my $isVirt = defined $data->{'.virtualGroup'};
     if ( $isVirt ) {
-        @devs = split m{,}, $data->{'.virtualGroup'};
+        @devs = split m{,}x, $data->{'.virtualGroup'};
     } else {
         @devs = keys %{$hash->{helper}{devicemap}{devices}};
     }
@@ -2292,7 +2292,7 @@ sub getIsVirtualGroup {
     }
 
     my $intent = $data->{intent} // return;
-    $intent =~ s{Group\z}{};
+    $intent =~ s{Group\z}{}x;
     my $grpIntent = $intent.'Group';
     my $needsConfirmation;
 
@@ -2353,8 +2353,12 @@ sub getIsVirtualGroup {
     }
 
     if (ref $dispatchFns->{$grpIntent} eq 'CODE' ) {
-        $restdata->{Confirmation} = 1;
-        return $dispatchFns->{$grpIntent}->($hash, $restdata);
+         if ( _isUnexpectedInTestMode($hash, $restdata) ) {
+             testmode_next($hash);
+             return 1;
+         }	
+         $restdata->{Confirmation} = 1;
+         return $dispatchFns->{$grpIntent}->($hash, $restdata);
     }
 
     return;
@@ -2436,7 +2440,7 @@ sub getNeedsClarification {
     my $response2 = getExtrapolatedResponse($hash, $identifier, $problems, 'confirm');
 
     my $timeout = _getDialogueTimeout($hash);
-    for (split m{,}, $todelete) {
+    for (split m{,}x, $todelete) {
         delete $data->{$_};
     }
     setDialogTimeout($hash, $data, $timeout, "$response $response2");
@@ -2994,7 +2998,7 @@ sub testmode_end {
     my $fail = shift // 0;
 
     my $filename = $hash->{helper}->{test}->{filename} // q{none};
-    $filename =~ s{[.]txt\z}{}i;
+    $filename =~ s{[.]txt\z}{}ix;
     $filename = "${filename}_result.txt";
 
     my $result = $hash->{helper}->{test}->{passed} // 0;
@@ -3003,12 +3007,12 @@ sub testmode_end {
     $result = "tested $result sentences, failed total: $fails, amongst these in dialogues: $failsInDialogue.";
 
     if ( $filename ne 'none_result.txt' ) {
-        my $duration = '';
-        $duration = sprintf( " Testing time: %.2f seconds.", (gettimeofday() - $hash->{asyncGet}{start})*1) if $hash->{asyncGet} && $hash->{asyncGet}{reading} eq 'testResult';
+        my $duration = $result;
+        $duration .= sprintf( " Testing time: %.2f seconds.", (gettimeofday() - $hash->{asyncGet}{start})*1) if $hash->{asyncGet} && $hash->{asyncGet}{reading} eq 'testResult';
         $result = $hash->{helper}->{test}->{result};
         push @{$result}, "test ended with timeout! Last request was $hash->{helper}->{test}->{content}->[$hash->{testline}]" if $fail;
         FileWrite({ FileName => $filename, ForceType => 'file' }, @{$result} );
-        $result .= "$duration See $filename for detailed results." if !$fail;
+        $result = "$duration See $filename for detailed results." if !$fail;
         $result = "Test ended incomplete with timeout. See $filename for results up to failure." if $fail;
     } else {
         $result = $fails ? 'Test failed, ' : 'Test ok, ';
@@ -3216,7 +3220,7 @@ sub handleTtsMsgDialog {
 
     my $recipient = $data->{sessionId} // return;
     my $message    = $data->{text}      // return;
-    $recipient = (split m{_$hash->{siteId}_}, $recipient,3)[0] // return;
+    $recipient = (split m{_$hash->{siteId}_}x, $recipient,3)[0] // return;
 
     Log3($hash, 5, "handleTtsMsgDialog for $hash->{NAME} called with $recipient and text $message");
     if ( defined $hash->{helper}->{msgDialog} 
@@ -4595,7 +4599,8 @@ sub handleIntentSetNumeric {
         $type   = $internal_mappings->{Change}->{$change}->{Type};
         $data->{Type} = $type if defined $type;
     }
-    my $subType = $data->{Type} eq 'temperature' ? 'desired-temp' : $data->{Type};
+    my $subType = $data->{Type};
+    $subType =  'desired-temp' if defined $subType && $subType eq 'temperature';
 
     my $value  = $data->{Value};
     my $room   = getRoomName($hash, $data);
@@ -4866,7 +4871,7 @@ sub handleIntentGetState {
     my @scenes; my $deviceNames; my $sceneNames;
     if ($device eq 'RHASSPY') {
         $type  //= 'generic';
-        return respond( $hash, $data, getResponse($hash, 'NoValidData')) if $type !~ m{\Ageneric|control|info|scenes|rooms\z};
+        return respond( $hash, $data, getResponse($hash, 'NoValidData')) if $type !~ m{\Ageneric|control|info|scenes|rooms\z}x;
         $response = getResponse( $hash, 'getRHASSPYOptions', $type );
         my $roomNames = '';
         if ( $type eq 'rooms' ) {
@@ -5586,6 +5591,7 @@ sub handleIntentConfirmAction {
 
     #continued session after intentNotRecognized
     if ( defined $data_old->{intentNotRecognized} 
+         && defined $mode
          && (   $mode eq 'OK' 
              || $mode eq 'Back' 
              || $mode eq 'Next' ) ) {
@@ -5930,16 +5936,19 @@ __END__
 
 =begin ToDo
 
-# Continous mode? (Wackelig, mehr oder weniger ungetestet...)
-
 # Rückmeldung zu den AMAD.*-Schnittstellen 
-- v.a. auch kontinuierliche Dialoge/Rückfragen, wann Input aufmachen
+Dialoge/Rückfragen, wann Input aufmachen (erl.?)
 
 # auto-training
-Erste Tests laufen; sieht teilweise funktional aus...
+sieht funktional aus, bisher keine Beschwerden...
 
-# mehr wie ein Device?
+# mehr wie ein Device/Group/Room?
+(Tests laufen, sieht prinzipiell ok aus).
 
+# Continous mode? (Wackelig, mehr oder weniger ungetestet...)
+
+#Who am I / Who are you?
+Personenbezogene Kommunikation? möglich, erwünscht, typische Anwendungsszenarien...?
 
 =end ToDo
 
@@ -6538,11 +6547,13 @@ yellow=rgb FFFF00</code></p>
 <ul>
   <li>Shortcuts</li> (keywords as required by user code)
   <li>SetOnOff</li>
-  {Device} and {Value} (on/off) are mandatory, {Room} is optional.
+  {Device} and {Value} (on/off) are mandatory, {Room} is optional.<br>
+  <a id="RHASSPY-multicommand">Note: As <a href="#RHASSPY-experimental"><b>experimental</b></a> feature, you may hand over additional fields, like {Device1} ("1" here and in the follwoing keys may be any additonal postfix), {Group}/{Group1} and/or {Room1}. Then the intent will be interpreted as SetOnOffGroup intent adressing all the devices matching the {Device}s or {Group}s name(s), as long as they are in (one of) the respective {Room}s.<br>
+  The only restriction is: The intented {Value} (or, for other multicommand intents: Color etc.-value) has to be unique.
   <li>SetOnOffGroup</li>
-  {Group} and {Value} (on/off) are mandatory, {Room} is optional, <i>global</i> in {Room} will be interpreted as "everywhere".
+  {Group} and {Value} (on/off) are mandatory, {Room} is optional, <i>global</i> in {Room} will be interpreted as "everywhere".<br>
+  <a href="#RHASSPY-multicommand"><b>Experimental multicommand</b></a> feature should work also with this intent, (redirecting to itself and adding devices according to the additional keys).
   <li>SetTimedOnOff</li>Basic keywords see SetOnOff, plus timer info in at least one of the fields {Hour} (for relative additions starting now), {Hourabs} (absolute time of day), {Min} (minutes) and {Sec} (seconds). If {Hourabs} is provided, {Min} and {Sec} will also be interpreted as absolute values.
- uhr [(1..60){Min!int}] $OnOffValue{Value}
   <li>SetTimedOnOffGroup</li> (for keywords see SetOnOffGroup)
   <li>GetOnOff</li>(for keywords see SetOnOff)
   <li>SetNumeric</li>
@@ -6555,6 +6566,7 @@ yellow=rgb FFFF00</code></p>
     <li>cmdStop (applies only for blinds)</li>
   </ul>
   allowing to decide on calculation scheme and to guess for the proper device and/or answer.
+  <a href="#RHASSPY-multicommand"><b>experimental multicommand</b></a> feature should work also with this intent (switching intent to SetNumericGroup).
   <li>SetNumericGroup</li>
     (as SetNumeric, except for {Group} instead of {Device}).
   <li>GetNumeric</li> (as SetNumeric)
@@ -6565,6 +6577,7 @@ yellow=rgb FFFF00</code></p>
   <li>MediaChannels</li> (as configured by the user)
   <li>SetColor</li> 
   {Device} and one Color option are mandatory, {Room} is optional. Color options are {Hue} (0-360), {Colortemp} (0-100), {Saturation} (as understood by your device) or {Rgb} (hex value from 000000 to FFFFFF)
+  <a href="#RHASSPY-multicommand"><b>experimental multicommand</b></a> feature should work as well.
   <li>SetColorGroup</li> (as SetColor, except for {Group} instead of {Device}).
   <li>SetScene</li> {Device} and {Scene} (it's recommended to use the $lng.fhemId.Scenes slot to get that generated automatically!), {Room} is optional, {Get} with value <i>scenes</i> may be used to request all possible scenes for a device prior to make a choice.
   <li>GetTime</li>
