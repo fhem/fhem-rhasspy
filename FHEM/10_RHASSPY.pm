@@ -1,4 +1,4 @@
-# $Id: 10_RHASSPY.pm 25948 2022-04-13 Beta-User $
+# $Id: 10_RHASSPY.pm 26011 2022-05-01 06:52:48Z Beta-User $
 ###########################################################################
 #
 # FHEM RHASSPY module (https://github.com/rhasspy)
@@ -2310,7 +2310,7 @@ sub getIsVirtualGroup {
             }
             next if !$single;
             push @devlist, $single;
-            $needsConfirmation //= getNeedsConfirmation($hash, $restdata, $intent, $data->{$dev}, 1);
+            $needsConfirmation //= getNeedsConfirmation($hash, $restdata, $intent, $single, 1);
             delete $maynotbe_in_room->{$dev};
             $cleared_in_room->{$dev} = 1;
         }
@@ -2343,9 +2343,10 @@ sub getIsVirtualGroup {
 
     $restdata->{intent}          = $grpIntent;
     $restdata->{'.virtualGroup'} = join q{,}, @devlist;
-    
+
     if ( $needsConfirmation ) {
         my $response = getResponse($hash, 'DefaultConfirmationRequestRawInput');
+        my $rawInput = $data->{rawInput};
         $response =~ s{(\$\w+)}{$1}eegx;
         Log3( $hash, 5, "[$hash->{NAME}] getNeedsConfirmation is true for virtual group, response is $response" );
         setDialogTimeout($hash, $restdata, _getDialogueTimeout($hash), $response);
