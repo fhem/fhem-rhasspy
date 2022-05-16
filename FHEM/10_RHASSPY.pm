@@ -1,4 +1,4 @@
-# $Id: 10_RHASSPY.pm 26011 2022-05-09 test extended choice room Beta-User $
+# $Id: 10_RHASSPY.pm 26011 2022-05-11 test extended choice room + intentNotRecognized review Beta-User $
 ###########################################################################
 #
 # FHEM RHASSPY module (https://github.com/rhasspy)
@@ -1669,8 +1669,7 @@ sub _AnalyzeCommand {
     my $cmd    = shift // return;
 
     if ( defined $hash->{testline} ) {
-        push @{$hash->{helper}->{test}->{result}->{$hash->{testline}}}, "Command: ${cmd}.";
-        #$hash->{helper}->{test}->{result}->[$hash->{testline}] .= " => Command: ${cmd}.";
+        push @{$hash->{helper}->{test}->{result}->{$hash->{testline}}}, "Command: ${cmd}";
         return;
     }
     # CMD ausführen
@@ -2371,7 +2370,7 @@ sub getIsVirtualGroup {
          if ( _isUnexpectedInTestMode($hash, $restdata) ) {
              testmode_next($hash);
              return 1;
-         }	
+         }
          $restdata->{Confirmation} = 1;
          return $dispatchFns->{$grpIntent}->($hash, $restdata);
     }
@@ -3533,7 +3532,7 @@ sub analyzeMQTTmessage {
     }
 
     if ( $topic =~ m{\Ahermes/tts/say}x ) {
-        return if !$hash->{siteId} || $data->{siteId} ne $hash->{siteId};
+        return if !$hash->{siteId} || $siteId ne $hash->{siteId};
         my $ret = handleTtsMsgDialog($hash, $data);
         push @updatedList, $ret if $ret && $defs{$ret};
         push @updatedList, $hash->{NAME};
@@ -3548,10 +3547,9 @@ sub analyzeMQTTmessage {
     }
     
     if ($topic =~ m{\Ahermes/nlu/intentNotRecognized}x && defined $siteId) {
-        return if !$hash->{siteId} || $siteId ne $hash->{siteId};
-        return testmode_parse($hash, 'intentNotRecognized', $data) if defined $hash->{testline};
-        handleIntentNotRecognized($hash, $data);
-        return $hash->{NAME};
+        #return if !$hash->{siteId} || $siteId ne $hash->{siteId};
+        return testmode_parse($hash, 'intentNotRecognized', $data) if defined $hash->{testline} && defined $hash->{siteId} && $siteId eq $hash->{siteId};
+        return handleIntentNotRecognized($hash, $data);
     }
 
     return testmode_parse($hash, $data->{intent}, $data) if defined $hash->{testline};
@@ -5606,15 +5604,25 @@ sub handleIntentNotRecognized {
     my $siteId = $hash->{siteId};
     my $msgdev = (split m{_${siteId}_}x, $identity,3)[0];
 
-    if ($msgdev) {
+    if ($msgdev && $msgdev ne $identity) {
         $data->{text} = getResponse( $hash, 'NoIntentRecognized' );
-        handleTtsMsgDialog($hash,$data);
+        return handleTtsMsgDialog($hash,$data);
     }
 
-    return if !$hash->{experimental};
+    return $hash->{NAME} if !$hash->{experimental};
 
     my $data_old = $hash->{helper}{'.delayed'}->{$identity};
-    return if !defined $data_old;
+
+    if ( !defined $data_old ) {
+        return handleCustomIntent($hash, 'intentNotRecognized', $data) if defined $hash->{helper}{custom} && defined $hash->{helper}{custom}{intentNotRecognized};
+        my $entry = qq([$data->{sessionId}] $data->{input});
+        readingsSingleUpdate($hash, 'intentNotRecognized', $entry, 1);
+        return respond( $hash, $data, getResponse( $hash, 'NoIntentRecognized' )) if defined $data->{siteId}; # Beta-User: unfortunately, there seems to be no siteId included in $data in test cases
+        return $hash->{NAME};
+    }
+    return; #Beta-User: End of recent changes...
+
+=pod
     return if !defined $data->{input} || length($data->{input}) < 12; #Beta-User: silence chuncks or single words, might later be configurable
     $hash->{helper}{'.delayed'}->{$identity}->{intentNotRecognized} = $data->{input};
     Log3( $hash->{NAME}, 5, "data_old is: " . toJSON( $hash->{helper}{'.delayed'}->{$identity} ) );
@@ -5624,6 +5632,7 @@ sub handleIntentNotRecognized {
     $data_old->{customData} = 'intentNotRecognized';
 
     return setDialogTimeout( $hash, $data_old, undef, $response );
+=cut
 }
 
 sub handleIntentCancelAction {
