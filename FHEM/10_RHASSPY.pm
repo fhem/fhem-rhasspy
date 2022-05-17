@@ -1,4 +1,4 @@
-# $Id: 10_RHASSPY.pm 26011 2022-05-11 test extended choice room + intentNotRecognized review Beta-User $
+# $Id: 10_RHASSPY.pm 26011 2022-05-16 test extended choice room + intentNotRecognized review Beta-User $
 ###########################################################################
 #
 # FHEM RHASSPY module (https://github.com/rhasspy)
@@ -5615,10 +5615,10 @@ sub handleIntentNotRecognized {
 
     if ( !defined $data_old ) {
         return handleCustomIntent($hash, 'intentNotRecognized', $data) if defined $hash->{helper}{custom} && defined $hash->{helper}{custom}{intentNotRecognized};
-        my $entry = qq([$data->{sessionId}] $data->{input});
+        my $entry = qq([$data->{siteId}] $data->{input});
         readingsSingleUpdate($hash, 'intentNotRecognized', $entry, 1);
-        return respond( $hash, $data, getResponse( $hash, 'NoIntentRecognized' )) if defined $data->{siteId}; # Beta-User: unfortunately, there seems to be no siteId included in $data in test cases
-        return $hash->{NAME};
+        $data->{requestType} = 'text';
+        return respond( $hash, $data, getResponse( $hash, 'NoIntentRecognized' ));
     }
     return; #Beta-User: End of recent changes...
 
