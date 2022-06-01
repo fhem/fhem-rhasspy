@@ -1,4 +1,4 @@
-# $Id: 10_RHASSPY.pm 26079 2022-05-25 changeover for group and device Beta-User $
+# $Id: 10_RHASSPY.pm 26102 2022-05-31 14:22:24Z Beta-User $
 ###########################################################################
 #
 # FHEM RHASSPY module (https://github.com/rhasspy)
@@ -2182,47 +2182,6 @@ sub getDeviceByIntentAndType {
 }
 
 
-# Eingeschaltetes Gerät mit bestimmten Intent und optional Type suchen
-sub getActiveDeviceForIntentAndType {
-    my $hash   = shift // return;
-    my $room   = shift;
-    my $intent = shift;
-    my $type   = shift;
-    my $subType = shift // $type;
-
-    my $device;
-    my ($matchesInRoom, $matchesOutsideRoom) = getDevicesByIntentAndType($hash, $room, $intent, $type, $subType);
-
-    # Anonyme Funktion zum finden des aktiven Geräts
-    my $activeDevice = sub ($$) {
-        my $subhash = shift;
-        my $devices = shift // return;
-        my $match;
-
-        for (@{$devices}) {
-            my $mapping = getMapping($subhash, $_, 'GetOnOff', undef, 1);
-            if ( defined $mapping ) {
-                # Gerät ein- oder ausgeschaltet?
-                my $value = _getOnOffState($subhash, $_, $mapping);
-                if ( $value ) {
-                    $match = $_;
-                    last;
-                }
-            }
-        }
-        return $match;
-    };
-
-    # Gerät finden, erst im aktuellen Raum, sonst in den restlichen
-    $device = $activeDevice->($hash, $matchesInRoom);
-    $device //= $activeDevice->($hash, $matchesOutsideRoom);
-
-    Log3($hash->{NAME}, 5, "Device selected: $device");
-
-    return $device;
-}
-
-
 # Gerät mit bestimmtem Sender suchen
 sub getDeviceByMediaChannel {
     my $hash    = shift // return;
@@ -2251,6 +2210,7 @@ sub getDeviceByMediaChannel {
     Log3($hash->{NAME}, 1, "No device for >>$channel<< found, especially not in room >>$room<< (also not outside)!");
     return;
 }
+
 
 sub getDevicesByGroup {
     my $hash    = shift // return;
@@ -4717,7 +4677,6 @@ sub handleIntentSetNumeric {
         return getGroupReplacesDevice($hash, $data) if !defined $device;
     } elsif ( defined $type && $type eq 'volume' ) {
         $device = 
-            #getActiveDeviceForIntentAndType($hash, $room, 'SetNumeric', $type) 
             getDeviceByIntentAndType($hash, $room, 'SetNumeric', $type, $type, 1) 
             // return respond( $hash, $data, getResponse( $hash, 'NoActiveMediaDevice') );
     } elsif ( !defined $data->{'.DevName'} ) {
@@ -5072,7 +5031,6 @@ sub handleIntentMediaControls {
         return getGroupReplacesDevice($hash, $data) if !defined $device;
         return getNeedsClarification( $hash, $data, 'ParadoxData', 'Room', [$data->{Device}, $data->{Room}] ) if !$device;
     } else {
-        #$device = getActiveDeviceForIntentAndType($hash, $room, 'MediaControls', undef) 
         $device = getDeviceByIntentAndType($hash, $room, 'MediaControls', undef, 1) 
         // return respond( $hash, $data, getResponse($hash, 'NoActiveMediaDevice') );
     }
