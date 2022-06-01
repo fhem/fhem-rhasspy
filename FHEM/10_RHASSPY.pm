@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-# $Id: 10_RHASSPY.pm 25948 2022-04-13 Beta-User $
-=======
 # $Id: 10_RHASSPY.pm 26102 2022-05-31 14:22:24Z Beta-User $
->>>>>>> dev
 ###########################################################################
 #
 # FHEM RHASSPY module (https://github.com/rhasspy)
@@ -1673,12 +1669,7 @@ sub _AnalyzeCommand {
     my $cmd    = shift // return;
 
     if ( defined $hash->{testline} ) {
-<<<<<<< HEAD
-        push @{$hash->{helper}->{test}->{result}->{$hash->{testline}}}, "Command: ${cmd}.";
-        #$hash->{helper}->{test}->{result}->[$hash->{testline}] .= " => Command: ${cmd}.";
-=======
         push @{$hash->{helper}->{test}->{result}->{$hash->{testline}}}, "Command: ${cmd}";
->>>>>>> dev
         return;
     }
     # CMD ausführen
@@ -3069,13 +3060,9 @@ sub testmode_end {
             my $line = $rawresult->{$resu};
             if ( defined $line->[1] ) {
                 my $single = $line->[0];
-<<<<<<< HEAD
-                push @{$aresult}, qq(   [RHASSPY] Input:      $single);
-=======
                 my @tokens = split m{[#]}x, $single, 2; 
                 push @{$aresult}, qq(   [RHASSPY] Input:      $tokens[0]);
                 push @{$aresult}, qq(                Id:      $tokens[1]) if defined $tokens[1];
->>>>>>> dev
                 for ( 1..@{$line}-1) {
                     $single = $line->[$_];
                     push @{$aresult}, qq(             $single);
@@ -3631,10 +3618,6 @@ sub respond {
     if ( defined $hash->{testline} ) {
         $response = $response->{text} if ref $response eq 'HASH';
         push @{$hash->{helper}->{test}->{result}->{$hash->{testline}}}, "Response: $response";
-<<<<<<< HEAD
-        #$hash->{helper}->{test}->{result}->[$hash->{testline}] .= " => Response: $response";
-=======
->>>>>>> dev
         $hash->{testline}++;
         return testmode_next($hash);
     }
