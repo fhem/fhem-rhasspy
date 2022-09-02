@@ -6235,7 +6235,7 @@ hermes/hotword/+/detected</code></p>
 <p><a id="RHASSPY-list"></a><b>Note:</b> RHASSPY consolidates a lot of data from different sources. The <b>final data structure RHASSPY uses at runtime</b> will be shown by the <a href="#list">list command</a>. It's highly recommended to have a close look at this data structure, especially when starting with RHASSPY or in case something doesn't work as expected!<br> 
 After changing something relevant within FHEM for either the data structure in</p>
 <ul>
-  <li><b>RHASSPY</b> (this form is used when reffering to module or the FHEM device) or for </li>
+  <li><b>RHASSPY</b> (this form is used when reffering to module or the FHEM device) or for</li>
   <li><b>Rhasspy</b> (this form is used when reffering to the remote service), </li>
 </ul>
 <p>you have to make sure these changes are also updated in RHASSPYs internal data structure and (often, but not always) to Rhasspy. See the different versions provided by the <a href="#RHASSPY-set-update">update command</a>.</p>
