@@ -1,4 +1,4 @@
-# $Id: 10_RHASSPY.pm 26367 2022-09-01 17:28:44Z Beta-User $
+# $Id: 10_RHASSPY.pm 26373 2022-09-02 19:21:55Z Beta-User $
 ###########################################################################
 #
 # FHEM RHASSPY module (https://github.com/rhasspy)
@@ -2012,7 +2012,7 @@ sub getDeviceByName {
     return 0 if $droom; #no further check if explicit room was requested!
 
     my @maybees;
-    my $oldType = $intent =~ m,(MediaChannels|Colors),x;
+    my $oldType = $intent =~ m,MediaChannels,x;
 
     for (sort keys %{$hash->{helper}{devicemap}{rhasspyRooms}}) {
         my $dev = $hash->{helper}{devicemap}{rhasspyRooms}{$_}{$name};
@@ -2036,6 +2036,7 @@ sub getDeviceByName {
                         && defined $hash->{helper}{devicemap}{devices}{$dev}{intents}->{$intent};
                 }
             } elsif ( $intent && $oldType ) {
+                $intent = 'Channels' if $intent eq 'MediaChannels';
                 if ( $type ) {
                     push @maybees, $dev if defined $hash->{helper}{devicemap}{devices}{$dev}->{$intent}
                         && defined $hash->{helper}{devicemap}{devices}{$dev}->{$intent}
@@ -6235,7 +6236,7 @@ hermes/hotword/+/detected</code></p>
 <p><a id="RHASSPY-list"></a><b>Note:</b> RHASSPY consolidates a lot of data from different sources. The <b>final data structure RHASSPY uses at runtime</b> will be shown by the <a href="#list">list command</a>. It's highly recommended to have a close look at this data structure, especially when starting with RHASSPY or in case something doesn't work as expected!<br> 
 After changing something relevant within FHEM for either the data structure in</p>
 <ul>
-  <li><b>RHASSPY</b> (this form is used when reffering to module or the FHEM device) or for</li>
+  <li><b>RHASSPY</b> (this form is used when reffering to module or the FHEM device) or for </li>
   <li><b>Rhasspy</b> (this form is used when reffering to the remote service), </li>
 </ul>
 <p>you have to make sure these changes are also updated in RHASSPYs internal data structure and (often, but not always) to Rhasspy. See the different versions provided by the <a href="#RHASSPY-set-update">update command</a>.</p>
